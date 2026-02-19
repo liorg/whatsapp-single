@@ -1,0 +1,75 @@
+[15:50:43.617] [32mINFO[39m (249): [36mBaileys service on :3001[39m
+[15:50:43.621] [32mINFO[39m (249): [36mRedis connected[39m
+⚠️ The printQRInTerminal option has been deprecated. You will no longer receive QR codes in the terminal automatically. Please listen to the connection.update event yourself and handle the QR your way. You can remove this message by removing this opttion. This message will be removed in a future version.
+[15:50:43.989] [32mINFO[39m (249): [36mconnected to WA[39m
+    browser: [
+      "WhatsApp Bot",
+      "Chrome",
+      "120.0.0"
+    ]
+    helloMsg: {
+      "clientHello": {
+        "ephemeral": "JGvLlN/NO4ZlWk9w8q3ERQYB17Z9SHBKYTRrz4WqmGA="
+      }
+    }
+[15:50:44.089] [32mINFO[39m (249): [36mlogging in...[39m
+    node: {
+      "username": "972546252491",
+      "passive": false,
+      "userAgent": {
+        "platform": "WEB",
+        "appVersion": {
+          "primary": 2,
+          "secondary": 3000,
+          "tertiary": 1033105955
+        },
+        "mcc": "000",
+        "mnc": "000",
+        "osVersion": "0.1",
+        "device": "Desktop",
+        "osBuildNumber": "0.1",
+        "releaseChannel": "RELEASE",
+        "localeLanguageIso6391": "en",
+        "localeCountryIso31661Alpha2": "US"
+      },
+      "webInfo": {
+        "webSubPlatform": "WEB_BROWSER"
+      },
+      "connectType": "WIFI_UNKNOWN",
+      "connectReason": "USER_ACTIVATED",
+      "device": 45,
+      "pull": true
+    }
+[15:50:44.610] [32mINFO[39m (249): [36mclean dirty bits account_sync[39m
+    fromTimestamp: 1771335529
+[15:50:44.611] [32mINFO[39m (249): [36moffline preview received[39m
+[15:50:44.718] [32mINFO[39m (249): [36mhandled 2 offline messages/notifications[39m
+[15:50:44.718] [32mINFO[39m (249): [36mConnection is now AwaitingInitialSync, buffering events[39m
+[15:50:44.719] [32mINFO[39m (249): [36mHistory sync is disabled by config, not waiting for notification. Transitioning to Online.[39m
+[15:50:44.719] [32mINFO[39m (249): [36m0 pre-keys found on server[39m
+[15:50:44.719] [32mINFO[39m (249): [36muploading pre-keys[39m
+    count: 30
+[15:50:44.725] [31mERROR[39m (249): [36mfailed to decrypt message[39m
+    key: {
+      "remoteJid": "65163831066651@lid",
+      "fromMe": true,
+      "id": "AC350D993C906FA2F9E8444A31C87B02"
+    }
+    err: {
+      "type": "MessageCounterError",
+      "message": "Key used already or never filled",
+      "stack":
+          MessageCounterError: Key used already or never filled
+              at SessionCipher.doDecryptWhisperMessage (/app/baileys/node_modules/libsignal/src/session_cipher.js:236:19)
+              at 46037871886515.0 [as awaitable] (/app/baileys/node_modules/libsignal/src/session_cipher.js:207:42)
+              at async _asyncQueueExecutor (/app/baileys/node_modules/libsignal/src/queue_job.js:20:29)
+      "name": "MessageCounterError"
+    }
+[15:50:44.725] [32mINFO[39m (249): [36muploading pre-keys[39m
+    count: 30
+[15:50:45.331] [32mINFO[39m (249): [36muploaded pre-keys[39m
+    count: 30
+[15:50:45.735] [32mINFO[39m (249): [36muploaded pre-keys[39m
+    count: 30
+[15:50:45.833] [32mINFO[39m (249): [36mopened connection to WA[39m
+[15:50:45.835] [32mINFO[39m (249): [36mWhatsApp connected ✓[39m

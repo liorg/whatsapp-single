@@ -1,0 +1,28 @@
+# docker-compose.prod.yml
+version: "3.9"
+
+services:
+  whatsapp:
+    build:
+      context: .
+      target: prod
+    container_name: whatsapp_all_in_one
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=Asia/Jerusalem
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      # ✅ רק נתונים/לוגים בפרוד (בלי קוד!)
+      - ./data/auth:/app/auth_info
+      - ./data/logs:/var/log
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    container_name: redis_prod
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data

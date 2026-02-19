@@ -67,3 +67,8 @@ docker exec whatsapp_all_in_one tail -f /var/log/fastapi.log
 ### סוגי הודעות:
 `text` | `image` | `video` | `audio` | `document` | `button_response` | `list_response` | `template_button_response` | `reaction` | `location`
 # whatsapp-single
+
+
+CLEAN TOKEN
+cd ~/projects/github/whatsapp-single
+sudo rm -rf ./data/auth

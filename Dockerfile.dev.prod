@@ -1,0 +1,61 @@
+# Dockerfile
+# targets: dev / prod
+
+FROM node:20-slim AS base
+
+# System deps (בלי redis-server כאן; redis יהיה service נפרד ב-compose)
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-venv \
+    curl git build-essential \
+    libvips-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Python venv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# ---------- Python deps (cache-friendly) ----------
+COPY fastapi/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Supervisor
+RUN pip install --no-cache-dir supervisor
+
+# ---------- Node deps (cache-friendly) ----------
+WORKDIR /app/baileys
+COPY baileys/package.json baileys/package-lock.json* ./
+# אם יש לך package-lock.json זה ישתמש ב-ci; אם אין, זה עדיין יעבוד
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+
+# ---------- App code ----------
+# Baileys code
+COPY baileys/src ./src
+
+# FastAPI code
+WORKDIR /app/fastapi
+COPY fastapi/app ./app
+
+# Supervisor configs
+COPY supervisord.prod.conf /etc/supervisord.prod.conf
+COPY supervisord.dev.conf  /etc/supervisord.dev.conf
+
+# Auth dir
+RUN mkdir -p /app/auth_info
+
+WORKDIR /app
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+# ---------- PROD ----------
+FROM base AS prod
+CMD ["supervisord", "-c", "/etc/supervisord.prod.conf", "-n"]
+
+# ---------- DEV ----------
+FROM base AS dev
+# בפיתוח נרצה גם dev-deps לפעמים. אם לא צריך – אפשר למחוק את 2 השורות הבאות.
+WORKDIR /app/baileys
+RUN npm install
+WORKDIR /app
+CMD ["supervisord", "-c", "/etc/supervisord.dev.conf", "-n"]

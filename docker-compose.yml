@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+  whatsapp:
+    build: .
+    container_name: whatsapp_all_in_one
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # ✅ רק הקוד שאתה עורך (לא כל /app)
+      - ./baileys/src:/app/baileys/src
+      - ./fastapi/app:/app/fastapi/app
+      - ./fastapi/requirements.txt:/tmp/requirements.txt:ro
+
+      # ✅ הנתונים שנשמרים
+      - ./data/auth:/app/auth_info
+      - ./data/redis:/var/lib/redis
+      - ./data/logs:/var/log
+
+    environment:
+      - TZ=Asia/Jerusalem

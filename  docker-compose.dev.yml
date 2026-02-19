@@ -1,0 +1,32 @@
+# docker-compose.dev.yml
+version: "3.9"
+
+services:
+  whatsapp:
+    build:
+      context: .
+      target: dev
+    container_name: whatsapp_all_in_one_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=Asia/Jerusalem
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      # ✅ רק קוד (בלי לדרוס node_modules שנבנו בתוך ה-image)
+      - ./baileys/src:/app/baileys/src
+      - ./fastapi/app:/app/fastapi/app
+
+      # ✅ נתונים/לוגים
+      - ./data/auth:/app/auth_info
+      - ./data/logs:/var/log
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    container_name: redis_dev
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
