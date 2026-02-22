@@ -72,3 +72,13 @@ docker exec whatsapp_all_in_one tail -f /var/log/fastapi.log
 CLEAN TOKEN
 cd ~/projects/github/whatsapp-single
 sudo rm -rf ./data/auth
+
+
+# מחק contacts.json
+sudo rm ./data/contacts/contacts.json
+
+# מחק את כל ה-auth
+sudo rm -rf ./data/auth/*
+
+# מחק לוגים
+sudo rm ./data/logs/*.log

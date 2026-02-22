@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 BAILEYS_URL = "http://localhost:3001"
 REDIS_URL   = "redis://localhost:6379"
 QUEUE_KEY   = "whatsapp:messages:incoming"
+# אחרי ה-imports, הוסף:
+CONTACTS_KEY = "whatsapp:contacts"
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 redis_client: aioredis.Redis | None = None
@@ -270,3 +272,26 @@ async def health():
         "redis":  "ok" if redis_ok  else "error",
         "baileys":"ok" if baileys_ok else "error"
     }
+# במקום CONTACTS_KEY = "whatsapp:contacts"
+# תשתמש ב-Baileys endpoint ישירות:
+
+@app.get("/contacts", tags=["Contacts"])
+async def get_contacts(
+    q: str = Query("", description="חיפוש"),
+    limit: int = Query(200, ge=1, le=1000)
+):
+    """קבל רשימת אנשי קשר"""
+    try:
+        r = await baileys_get(f"/contacts?q={q}&limit={limit}")
+        return r
+    except Exception as e:
+        raise HTTPException(503, f"Baileys unavailable: {e}")
+
+@app.get("/contacts/count", tags=["Contacts"])
+async def contacts_count():
+    """ספירת אנשי קשר"""
+    try:
+        r = await baileys_get("/debug/contacts-count")
+        return r
+    except Exception as e:
+        raise HTTPException(503, f"Baileys unavailable: {e}")

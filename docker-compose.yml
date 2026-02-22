@@ -7,16 +7,16 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+      - "3001:3001"
     volumes:
-      # ✅ רק הקוד שאתה עורך (לא כל /app)
+      # רק קוד לפיתוח (ללא build)
       - ./baileys/src:/app/baileys/src
       - ./fastapi/app:/app/fastapi/app
-      - ./fastapi/requirements.txt:/tmp/requirements.txt:ro
 
-      # ✅ הנתונים שנשמרים
+      # נתונים שנשמרים
       - ./data/auth:/app/auth_info
       - ./data/redis:/var/lib/redis
       - ./data/logs:/var/log
-
+      - ./data/contacts:/app/data    # ✅ חדש - לשמירת contacts.json
     environment:
       - TZ=Asia/Jerusalem
