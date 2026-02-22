@@ -65,16 +65,6 @@ class WebhookRegister(BaseModel):
 class WebhookUnregister(BaseModel):
     url: str
 
-class ButtonResponse(BaseModel):
-    jid: str
-    buttonId: str
-    displayText: str
-
-class ListResponse(BaseModel):
-    jid: str
-    rowId: str
-    title: Optional[str] = None
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 async def baileys_post(path: str, data: dict) -> dict:
     async with httpx.AsyncClient(timeout=30) as c:
@@ -199,36 +189,6 @@ async def send_list(b: ListMsg):
     ```
     """
     return await baileys_post("/send/list", b.model_dump())
-
-@app.post("/send/button-response", tags=["Send"])
-async def send_button_response(b: ButtonResponse):
-    """
-    שלח תשובת כפתור (סימולציה של לחיצת משתמש)
-    
-    ```json
-    {
-      "jid": "972501234567",
-      "buttonId": "btn_1",
-      "displayText": "כן"
-    }
-    ```
-    """
-    return await baileys_post("/send/button-response", b.model_dump())
-
-@app.post("/send/list-response", tags=["Send"])
-async def send_list_response(b: ListResponse):
-    """
-    שלח תשובת רשימה (סימולציה של בחירה מתפריט)
-    
-    ```json
-    {
-      "jid": "972501234567",
-      "rowId": "row_1",
-      "title": "שירות 1"
-    }
-    ```
-    """
-    return await baileys_post("/send/list-response", b.model_dump())
 
 # ── Webhooks ──────────────────────────────────────────────────────────────────
 @app.post("/webhooks/register", tags=["Webhooks"])

@@ -75,10 +75,37 @@ sudo rm -rf ./data/auth
 
 
 # מחק contacts.json
-sudo rm ./data/contacts/contacts.json
+sudo rm ./data1/contacts/*
 
 # מחק את כל ה-auth
-sudo rm -rf ./data/auth/*
+sudo rm -rf ./data1/auth/*
 
 # מחק לוגים
-sudo rm ./data/logs/*.log
+sudo rm ./data1/logs/*.loggit 
+
+
+#  הרצה דינמית
+sudo docker build -t whatsapp-image .
+cd ~/projects/github/whatsapp-single
+
+# 1. עצור את הישן
+sudo docker stop whatsapp_1
+sudo docker rm whatsapp_1
+
+# 2. בנה image חדש
+sudo docker build -t whatsapp-image .
+
+# 3. הרץ מחדש
+sudo docker run -d \
+  --name whatsapp_1 \
+  --restart unless-stopped \
+  -p 8001:8000 \
+  -p 3002:3001 \
+  -v $(pwd)/baileys/src:/app/baileys/src \
+  -v $(pwd)/fastapi/app:/app/fastapi/app \
+  -v $(pwd)/data/auth_1:/app/auth_info \
+  -v $(pwd)/data/redis_1:/var/lib/redis \
+  -v $(pwd)/data/logs_1:/var/log \
+  -v $(pwd)/data/contacts_1:/app/data \
+  -e TZ=Asia/Jerusalem \
+  whatsapp-image

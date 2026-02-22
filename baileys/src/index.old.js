@@ -358,30 +358,6 @@ app.post('/send/list', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Simulate button response
-// Simulate button response
-app.post('/send/button-response', async (req, res) => {
-  try {
-    const { jid: j, buttonId, displayText } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), {
-      text: displayText || buttonId              // ← רק השורה הזו
-    });
-    res.json({ success: true, messageId: r?.key?.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-// Simulate list response
-// השתמש בזה:
-app.post('/send/list-response', async (req, res) => {
-  try {
-    const { jid: j, rowId, title } = req.body;
-    // פשוט שלח כטקסט - WhatsApp לא תומך בשליחת list response מהבוט
-    const r = await sock.sendMessage(normalizeJid(j), {
-      text: title || rowId
-    });
-    res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text - list responses cannot be sent programmatically' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // Webhooks
 app.post('/webhooks/register', async (req, res) => {
   const { url, secret } = req.body;
