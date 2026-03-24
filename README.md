@@ -42,11 +42,11 @@ curl -X POST "http://localhost:8000/messages/pop?count=10"
 ## 🛠️ לוגים
 
 ```bash
-docker logs whatsapp_all_in_one -f
+sudo docker logs whatsapp_1 -f
 
 # לוג ספציפי
-docker exec whatsapp_all_in_one tail -f /var/log/baileys.log
-docker exec whatsapp_all_in_one tail -f /var/log/fastapi.log
+sudo docker exec whatsapp_1 tail -f /var/log/baileys.log
+sudo docker exec whatsapp_1 tail -f /var/log/fastapi.log
 ```
 
 ## 📨 מבנה הודעה נכנסת
@@ -71,19 +71,16 @@ docker exec whatsapp_all_in_one tail -f /var/log/fastapi.log
 
 CLEAN TOKEN
 cd ~/projects/github/whatsapp-single
-sudo rm -rf ./data/auth
+sudo rm -rf ./data/auth_1
 
 
 # מחק contacts.json
-sudo rm ./data1/contacts/*
+sudo rm ./data/contacts_1/*
 
 # מחק את כל ה-auth
-sudo rm -rf ./data1/auth/*
+sudo rm -rf ./data/auth/*
 
-# מחק לוגים
-sudo rm ./data1/logs/*.loggit 
-
-
+gi
 #  הרצה דינמית
 sudo docker build -t whatsapp-image .
 cd ~/projects/github/whatsapp-single
@@ -96,16 +93,4 @@ sudo docker rm whatsapp_1
 sudo docker build -t whatsapp-image .
 
 # 3. הרץ מחדש
-sudo docker run -d \
-  --name whatsapp_1 \
-  --restart unless-stopped \
-  -p 8001:8000 \
-  -p 3002:3001 \
-  -v $(pwd)/baileys/src:/app/baileys/src \
-  -v $(pwd)/fastapi/app:/app/fastapi/app \
-  -v $(pwd)/data/auth_1:/app/auth_info \
-  -v $(pwd)/data/redis_1:/var/lib/redis \
-  -v $(pwd)/data/logs_1:/var/log \
-  -v $(pwd)/data/contacts_1:/app/data \
-  -e TZ=Asia/Jerusalem \
-  whatsapp-image
+sudo docker run -d --name whatsapp_1 --restart unless-stopped -p 8001:8000 -p 3002:3001 -v $(pwd)/baileys/src:/app/baileys/src -v $(pwd)/fastapi/app:/app/fastapi/app -v $(pwd)/data/auth_1:/app/auth_info -v $(pwd)/data/redis_1:/var/lib/redis -v $(pwd)/data/logs_1:/var/log -v $(pwd)/data/contacts_1:/app/data -e TZ=Asia/Jerusalem whatsapp-image
