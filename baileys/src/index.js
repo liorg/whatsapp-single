@@ -211,7 +211,7 @@ async function connectWA() {
       keys:  makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    browser: ['WhatsApp Bot', 'Chrome', '120.0.0'],
+    browser: ['ScenarioBot', 'Chrome', '120.0.1'],
   });
 
   sock.ev.on('creds.update', saveCreds);

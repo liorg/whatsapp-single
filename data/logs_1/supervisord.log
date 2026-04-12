@@ -1,0 +1,107 @@
+2026-03-24 17:49:17,780 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-24 17:49:17,787 INFO RPC interface 'supervisor' initialized
+2026-03-24 17:49:17,787 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-24 17:49:17,787 INFO supervisord started with pid 1
+2026-03-24 17:49:18,799 INFO spawned: 'redis' with pid 8
+2026-03-24 17:49:18,801 INFO spawned: 'baileys' with pid 9
+2026-03-24 17:49:18,803 INFO spawned: 'fastapi' with pid 10
+2026-03-24 17:49:19,239 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:49:20,384 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-24 17:49:20,385 INFO spawned: 'fastapi' with pid 27
+2026-03-24 17:49:20,742 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:49:22,745 INFO spawned: 'fastapi' with pid 28
+2026-03-24 17:49:23,137 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:49:26,142 INFO spawned: 'fastapi' with pid 36
+2026-03-24 17:49:26,500 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:49:27,501 INFO gave up: fastapi entered FATAL state, too many start retries too quickly
+2026-03-24 17:49:29,504 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-03-24 17:55:50,087 WARN received SIGTERM indicating exit request
+2026-03-24 17:55:50,087 INFO waiting for redis, baileys to die
+2026-03-24 17:55:51,097 WARN stopped: baileys (terminated by SIGTERM)
+2026-03-24 17:55:51,147 INFO stopped: redis (exit status 0)
+2026-03-24 17:57:14,193 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-24 17:57:14,200 INFO RPC interface 'supervisor' initialized
+2026-03-24 17:57:14,200 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-24 17:57:14,200 INFO supervisord started with pid 1
+2026-03-24 17:57:15,203 INFO spawned: 'redis' with pid 8
+2026-03-24 17:57:15,204 INFO spawned: 'baileys' with pid 9
+2026-03-24 17:57:15,206 INFO spawned: 'fastapi' with pid 10
+2026-03-24 17:57:15,595 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:57:16,597 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-24 17:57:16,598 INFO spawned: 'fastapi' with pid 27
+2026-03-24 17:57:16,967 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:57:18,970 INFO spawned: 'fastapi' with pid 28
+2026-03-24 17:57:19,328 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:57:22,332 INFO spawned: 'fastapi' with pid 36
+2026-03-24 17:57:22,700 WARN exited: fastapi (exit status 1; not expected)
+2026-03-24 17:57:23,702 INFO gave up: fastapi entered FATAL state, too many start retries too quickly
+2026-03-24 17:57:25,704 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-03-24 18:02:01,845 WARN received SIGTERM indicating exit request
+2026-03-24 18:02:01,846 INFO waiting for redis, baileys to die
+2026-03-24 18:02:02,856 WARN stopped: baileys (terminated by SIGTERM)
+2026-03-24 18:02:02,955 INFO stopped: redis (exit status 0)
+2026-03-24 18:02:03,381 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-24 18:02:03,382 INFO RPC interface 'supervisor' initialized
+2026-03-24 18:02:03,382 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-24 18:02:03,382 INFO supervisord started with pid 1
+2026-03-24 18:02:04,385 INFO spawned: 'redis' with pid 8
+2026-03-24 18:02:04,387 INFO spawned: 'baileys' with pid 9
+2026-03-24 18:02:04,388 INFO spawned: 'fastapi' with pid 10
+2026-03-24 18:02:05,740 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-24 18:02:09,427 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
+2026-03-24 18:02:14,432 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-03-24 18:22:04,139 WARN received SIGTERM indicating exit request
+2026-03-24 18:22:04,140 INFO waiting for redis, baileys, fastapi to die
+2026-03-24 18:22:04,374 INFO stopped: fastapi (exit status 0)
+2026-03-24 18:22:04,383 WARN stopped: baileys (terminated by SIGTERM)
+2026-03-24 18:22:04,492 INFO stopped: redis (exit status 0)
+2026-03-24 18:36:01,179 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-24 18:36:01,186 INFO RPC interface 'supervisor' initialized
+2026-03-24 18:36:01,186 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-24 18:36:01,186 INFO supervisord started with pid 1
+2026-03-24 18:36:02,189 INFO spawned: 'redis' with pid 8
+2026-03-24 18:36:02,191 INFO spawned: 'baileys' with pid 9
+2026-03-24 18:36:02,193 INFO spawned: 'fastapi' with pid 10
+2026-03-24 18:36:03,544 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-24 18:36:07,210 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
+2026-03-24 18:36:12,215 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-03-24 18:42:42,148 WARN received SIGTERM indicating exit request
+2026-03-24 18:42:42,148 INFO waiting for redis, baileys, fastapi to die
+2026-03-24 18:42:42,380 INFO stopped: fastapi (exit status 0)
+2026-03-24 18:42:42,386 WARN stopped: baileys (terminated by SIGTERM)
+2026-03-24 18:42:42,503 INFO stopped: redis (exit status 0)
+2026-03-24 18:43:06,274 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-24 18:43:06,280 INFO RPC interface 'supervisor' initialized
+2026-03-24 18:43:06,280 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-24 18:43:06,280 INFO supervisord started with pid 1
+2026-03-24 18:43:07,283 INFO spawned: 'redis' with pid 8
+2026-03-24 18:43:07,285 INFO spawned: 'baileys' with pid 9
+2026-03-24 18:43:07,286 INFO spawned: 'fastapi' with pid 10
+2026-03-24 18:43:08,630 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-24 18:43:13,164 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
+2026-03-24 18:43:17,852 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-03-26 15:19:56,438 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-03-26 15:19:56,743 INFO RPC interface 'supervisor' initialized
+2026-03-26 15:19:56,743 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-03-26 15:19:56,743 INFO supervisord started with pid 1
+2026-03-26 15:19:57,747 INFO spawned: 'redis' with pid 8
+2026-03-26 15:19:57,748 INFO spawned: 'baileys' with pid 9
+2026-03-26 15:19:57,749 INFO spawned: 'fastapi' with pid 10
+2026-03-26 15:19:59,195 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-03-26 15:20:03,442 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
+2026-03-26 15:20:08,449 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-04-12 10:30:12,267 WARN received SIGTERM indicating exit request
+2026-04-12 10:30:12,267 INFO waiting for redis, baileys, fastapi to die
+2026-04-12 10:30:12,527 INFO stopped: fastapi (exit status 0)
+2026-04-12 10:30:12,552 WARN stopped: baileys (terminated by SIGTERM)
+2026-04-12 10:30:12,652 INFO stopped: redis (exit status 0)
+2026-04-12 10:30:51,927 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-04-12 10:30:51,931 INFO RPC interface 'supervisor' initialized
+2026-04-12 10:30:51,931 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-04-12 10:30:51,931 INFO supervisord started with pid 1
+2026-04-12 10:30:52,935 INFO spawned: 'redis' with pid 8
+2026-04-12 10:30:52,937 INFO spawned: 'baileys' with pid 9
+2026-04-12 10:30:52,938 INFO spawned: 'fastapi' with pid 10
+2026-04-12 10:30:54,375 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2026-04-12 10:30:57,941 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
+2026-04-12 10:31:02,948 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
