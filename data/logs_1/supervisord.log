@@ -105,3 +105,8 @@
 2026-04-12 10:30:54,375 INFO success: redis entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
 2026-04-12 10:30:57,941 INFO success: fastapi entered RUNNING state, process has stayed up for > than 5 seconds (startsecs)
 2026-04-12 10:31:02,948 INFO success: baileys entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
+2026-04-12 18:50:38,872 WARN received SIGTERM indicating exit request
+2026-04-12 18:50:38,872 INFO waiting for redis, baileys, fastapi to die
+2026-04-12 18:50:39,054 INFO stopped: fastapi (exit status 0)
+2026-04-12 18:50:39,061 WARN stopped: baileys (terminated by SIGTERM)
+2026-04-12 18:50:39,105 INFO stopped: redis (exit status 0)

@@ -126,3 +126,9 @@
 8:M 12 Apr 2026 10:30:52.956 * DB loaded from append only file: 0.000 seconds
 8:M 12 Apr 2026 10:30:52.956 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
 8:M 12 Apr 2026 10:30:52.956 * Ready to accept connections
+8:signal-handler (1776009039) Received SIGTERM scheduling shutdown...
+8:M 12 Apr 2026 18:50:39.093 # User requested shutdown...
+8:M 12 Apr 2026 18:50:39.093 * Calling fsync() on the AOF file.
+8:M 12 Apr 2026 18:50:39.093 * Saving the final RDB snapshot before exiting.
+8:M 12 Apr 2026 18:50:39.104 * DB saved on disk
+8:M 12 Apr 2026 18:50:39.104 # Redis is now ready to exit, bye bye...
