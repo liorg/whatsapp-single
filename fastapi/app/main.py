@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BAILEYS_URL = "http://localhost:3001"
-REDIS_URL   = "redis://localhost:6379"
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 redis_client: aioredis.Redis | None = None
