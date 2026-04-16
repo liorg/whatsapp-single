@@ -119,6 +119,22 @@ async function sendToWebhooks(payload) {
   }
 }
 
+// ── Helper: build authenticated payload ──────────────────────────────────────
+function buildAuthPayload() {
+  const raw      = fs.readFileSync('/app/auth_info/creds.json');
+  const creds_b64 = raw.toString('base64');
+  const jid      = sock.user?.id || '';
+  const phone    = jid.split('@')[0].split(':')[0];
+  return {
+    event:     'authenticated',
+    phone,
+    jid,
+    name:      sock.user?.name || null,
+    timestamp: new Date().toISOString(),
+    creds_b64,
+  };
+}
+
 // ── WhatsApp State ────────────────────────────────────────────────────────────
 let sock       = null;
 let qrCodeData = null;
@@ -253,7 +269,6 @@ async function connectWA() {
       status     = 'qr_ready';
       logger.info('QR ready — open GET /qrcode/image to scan');
       
-      // שלח webhook על QR
       await sendToWebhooks({
         event: 'qr',
         timestamp: new Date().toISOString(),
@@ -264,21 +279,8 @@ async function connectWA() {
       status     = 'connected';
       logger.info('WhatsApp connected');
 
-      // שלח creds.json כ-base64 לכל webhooks רשומים
       try {
-        const raw      = fs.readFileSync('/app/auth_info/creds.json');
-        const creds_b64 = raw.toString('base64');
-        const jid      = sock.user?.id || '';
-        const phone    = jid.split('@')[0].split(':')[0];
-        
-        await sendToWebhooks({
-          event:     'authenticated',
-          phone,
-          jid,
-          name:      sock.user?.name || null,
-          timestamp: new Date().toISOString(),
-          creds_b64,
-        });
+        await sendToWebhooks(buildAuthPayload());
       } catch (e) {
         logger.error({ err: e }, 'Failed to send creds on connection open');
       }
@@ -289,7 +291,6 @@ async function connectWA() {
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
       
-      // שלח webhook על התנתקות
       await sendToWebhooks({
         event: 'disconnected',
         code,
@@ -330,7 +331,6 @@ async function connectWA() {
           !msg.message?.extendedTextMessage) continue;
       if (msg.message?.protocolMessage) continue;
 
-      // שמור contact
       if (!msg.key.fromMe) {
         const sender      = msg.key.participant || msg.key.remoteJid;
         const senderPhone = msg.key.participantPn || msg.key.senderPn || sender;
@@ -347,10 +347,8 @@ async function connectWA() {
       parsed.fromMe = msg.key.fromMe || false;
       parsed.pushName = msg.pushName || null;
       
-      // הוסף ל-Redis stream
       await redisStreams.addMessage(parsed);
       
-      // *** שלח webhook להודעות נכנסות ***
       await sendToWebhooks({
         event: 'message',
         messageId: parsed.messageId,
@@ -382,6 +380,25 @@ app.get('/status', (_, res) => res.json({ status }));
 app.get('/qrcode', (_, res) => {
   if (!qrCodeData) return res.status(404).json({ error: 'QR not available', status });
   res.json({ qr: qrCodeData, status });
+});
+
+// ── Resend auth ← חדש! ───────────────────────────────────────────────────────
+app.post('/resend-auth', async (req, res) => {
+  try {
+    if (status !== 'connected')
+      return res.status(400).json({ error: 'not connected', status });
+
+    if (!fs.existsSync('/app/auth_info/creds.json'))
+      return res.status(404).json({ error: 'creds.json not found' });
+
+    const payload = buildAuthPayload();
+    await sendToWebhooks(payload);
+    logger.info({ phone: payload.phone }, 'Resent authenticated event');
+    res.json({ success: true, phone: payload.phone });
+  } catch (e) {
+    logger.error({ err: e }, 'Failed to resend auth');
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Send

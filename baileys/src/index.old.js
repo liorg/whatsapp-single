@@ -88,6 +88,37 @@ async function getContacts(query = '', limit = 200) {
   }
 }
 
+// ── Send to all webhooks ─────────────────────────────────────────────────────
+async function sendToWebhooks(payload) {
+  try {
+    const webhooks = await redisStreams.listWebhooks();
+    if (!webhooks || webhooks.length === 0) return;
+    
+    await Promise.allSettled(
+      webhooks.map(async (wh) => {
+        const url = typeof wh === 'string' ? wh : wh.url;
+        const secret = typeof wh === 'object' ? wh.secret : null;
+        const headers = { 'Content-Type': 'application/json' };
+        if (secret) headers['X-Webhook-Secret'] = secret;
+        
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(15000),
+          });
+          logger.info({ url, status: res.status, event: payload.event }, 'Webhook sent');
+        } catch (err) {
+          logger.warn({ url, err: err.message }, 'Failed to send webhook');
+        }
+      })
+    );
+  } catch (e) {
+    logger.error({ err: e }, 'Failed to send to webhooks');
+  }
+}
+
 // ── WhatsApp State ────────────────────────────────────────────────────────────
 let sock       = null;
 let qrCodeData = null;
@@ -221,46 +252,33 @@ async function connectWA() {
       qrCodeData = qr;
       status     = 'qr_ready';
       logger.info('QR ready — open GET /qrcode/image to scan');
+      
+      // שלח webhook על QR
+      await sendToWebhooks({
+        event: 'qr',
+        timestamp: new Date().toISOString(),
+      });
     }
     if (connection === 'open') {
       qrCodeData = null;
       status     = 'connected';
       logger.info('WhatsApp connected');
 
-      // שלח creds.json כ-base64 לכל webhooks רשומים OK
+      // שלח creds.json כ-base64 לכל webhooks רשומים
       try {
         const raw      = fs.readFileSync('/app/auth_info/creds.json');
         const creds_b64 = raw.toString('base64');
         const jid      = sock.user?.id || '';
         const phone    = jid.split('@')[0].split(':')[0];
-        const payload  = {
+        
+        await sendToWebhooks({
           event:     'authenticated',
           phone,
           jid,
           name:      sock.user?.name || null,
           timestamp: new Date().toISOString(),
           creds_b64,
-        };
-        const webhooks = await redisStreams.listWebhooks();
-        await Promise.allSettled(
-          webhooks.map(async (wh) => {
-            const url    = typeof wh === 'string' ? wh : wh.url;
-            const secret = typeof wh === 'object' ? wh.secret : null;
-            const headers = { 'Content-Type': 'application/json' };
-            if (secret) headers['X-Webhook-Secret'] = secret;
-            try {
-              const res = await fetch(url, {
-                method:  'POST',
-                headers,
-                body:    JSON.stringify(payload),
-                signal:  AbortSignal.timeout(15000),
-              });
-              logger.info({ url, status: res.status }, 'creds_b64 sent to webhook');
-            } catch (err) {
-              logger.warn({ url, err: err.message }, 'Failed to send creds_b64');
-            }
-          })
-        );
+        });
       } catch (e) {
         logger.error({ err: e }, 'Failed to send creds on connection open');
       }
@@ -270,6 +288,15 @@ async function connectWA() {
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
+      
+      // שלח webhook על התנתקות
+      await sendToWebhooks({
+        event: 'disconnected',
+        code,
+        retry,
+        timestamp: new Date().toISOString(),
+      });
+      
       if (retry) setTimeout(connectWA, 3000);
     }
   });
@@ -303,6 +330,7 @@ async function connectWA() {
           !msg.message?.extendedTextMessage) continue;
       if (msg.message?.protocolMessage) continue;
 
+      // שמור contact
       if (!msg.key.fromMe) {
         const sender      = msg.key.participant || msg.key.remoteJid;
         const senderPhone = msg.key.participantPn || msg.key.senderPn || sender;
@@ -317,7 +345,25 @@ async function connectWA() {
 
       const parsed  = parseMsg(msg);
       parsed.fromMe = msg.key.fromMe || false;
+      parsed.pushName = msg.pushName || null;
+      
+      // הוסף ל-Redis stream
       await redisStreams.addMessage(parsed);
+      
+      // *** שלח webhook להודעות נכנסות ***
+      await sendToWebhooks({
+        event: 'message',
+        messageId: parsed.messageId,
+        jid: parsed.jid,
+        type: parsed.type,
+        data: {
+          ...parsed.data,
+          fromMe: parsed.fromMe,
+          pushName: parsed.pushName,
+          lid: parsed.sender,
+        },
+        timestamp: parsed.timestamp,
+      });
     }
   });
 }
