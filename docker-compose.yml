@@ -1,22 +1,36 @@
 version: '3.9'
 
 services:
+
+  redis:
+    image: redis:alpine
+    container_name: redis_shared
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - whatsapp_network
+    restart: unless-stopped
+
   whatsapp:
-    build: .
+    image: your-dockerhub-username/your-image:latest  # ← מ-Hub ולא build
     container_name: whatsapp_all_in_one
     restart: unless-stopped
     ports:
       - "8000:8000"
       - "3001:3001"
     volumes:
-      # רק קוד לפיתוח (ללא build)
-      - ./baileys/src:/app/baileys/src
-      - ./fastapi/app:/app/fastapi/app
-
-      # נתונים שנשמרים
       - ./data/auth:/app/auth_info
-      - ./data/redis:/var/lib/redis
       - ./data/logs:/var/log
-      - ./data/contacts:/app/data    # ✅ חדש - לשמירת contacts.json
+      - ./data/contacts:/app/data
     environment:
       - TZ=Asia/Jerusalem
+      - REDIS_URL=redis://redis_shared:6379
+    depends_on:
+      - redis
+    networks:
+      - whatsapp_network
+
+networks:
+  whatsapp_network:
+    name: whatsapp_network
+    driver: bridge

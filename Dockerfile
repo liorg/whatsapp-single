@@ -3,7 +3,6 @@ FROM node:20-slim
 # ── System deps ──────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv \
-    redis-server \
     curl \
     git \
     build-essential \
@@ -28,18 +27,18 @@ COPY baileys/src/ ./src/
 WORKDIR /app/fastapi
 COPY fastapi/app/ ./app/
 
-# ── Supervisor (מנהל תהליכים) ─────────────────────────────────────────────────
+# ── Supervisor ────────────────────────────────────────────────────────────────
 RUN pip install supervisor
 COPY supervisord.conf /etc/supervisord.conf
 
-# ── Auth dir ─────────────────────────────────────────────────────────────────
+# ── Auth dir ──────────────────────────────────────────────────────────────────
 RUN mkdir -p /app/auth_info
 
 WORKDIR /app
 
-EXPOSE 8000
+EXPOSE 8000 3001
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
   CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["supervisord", "-c", "/etc/supervisord.conf", "-n"]
