@@ -11,7 +11,7 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
-const APP_VERSION = '1.0.0'; // ← שנה רק כאן
+const APP_VERSION = '1.0.0.1; // ← שנה רק כאן
 
 // ── Silence noisy Baileys logs ────────────────────────────────────────────────
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
@@ -536,6 +536,7 @@ app.delete('/logout', async (_, res) => {
   }
 });
 app.get('/version', (_, res) => res.json({ version: APP_VERSION }));
+
 app.listen(PORT, () => {
   logger.info(`Baileys service on :${PORT}`);
   connectWA();

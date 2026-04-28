@@ -449,6 +449,15 @@ async def get_contacts(
 async def contacts_count():
     return await baileys_get("/debug/contacts-count")
 
+@app.get("/version", tags=["System"])
+async def version():
+    try:
+        r = await baileys_get("/version")
+        return r
+    except Exception as e:
+        raise HTTPException(503, f"Baileys unavailable: {e}")
+    
+    
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
 async def health():
@@ -471,10 +480,4 @@ async def health():
         "redis":   "ok" if redis_ok   else "error",
         "baileys": "ok" if baileys_ok else "error",
     }
-    @app.get("/version", tags=["System"])
-    async def version():
-        try:
-            r = await baileys_get("/version")
-            return r
-        except Exception as e:
-            raise HTTPException(503, f"Baileys unavailable: {e}")
+
