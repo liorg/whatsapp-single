@@ -11,6 +11,8 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
+const APP_VERSION = '1.0.0'; // ← שנה רק כאן
+
 // ── Silence noisy Baileys logs ────────────────────────────────────────────────
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -258,7 +260,7 @@ async function connectWA() {
       keys:  makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    browser: ['ScenarioBot', 'Chrome', '120.0.1'],
+    browser: ['ScenarioBot', 'Chrome', APP_VERSION],
   });
 
   
@@ -269,7 +271,7 @@ async function connectWA() {
   await new Promise(resolve => setTimeout(resolve, 500));
   
   if (!fs.existsSync('/app/auth_info/creds.json')) return;
-  
+  if (!sock?.user?.id) return;
   const payload = buildAuthPayload();
   await sendToWebhooks(payload);
   logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
@@ -533,7 +535,7 @@ app.delete('/logout', async (_, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
+app.get('/version', (_, res) => res.json({ version: APP_VERSION }));
 app.listen(PORT, () => {
   logger.info(`Baileys service on :${PORT}`);
   connectWA();
