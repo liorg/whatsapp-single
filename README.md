@@ -94,3 +94,14 @@ sudo docker build -t whatsapp-image .
 
 # 3. הרץ מחדש
 sudo docker run -d --name whatsapp_1 --restart unless-stopped -p 8001:8000 -p 3002:3001 -v $(pwd)/baileys/src:/app/baileys/src -v $(pwd)/fastapi/app:/app/fastapi/app -v $(pwd)/data/auth_1:/app/auth_info -v $(pwd)/data/redis_1:/var/lib/redis -v $(pwd)/data/logs_1:/var/log -v $(pwd)/data/contacts_1:/app/data -e TZ=Asia/Jerusalem whatsapp-image
+
+
+##  בדיקה שקוד תקין
+node --check baileys/src/index.js
+sudo python3 -m py_compile fastapi/app/main.py && echo "OK"
+
+## בדיקה מתוך CONTAINER
+docker exec whatsapp_9725XXXX  node --check /app/baileys/src/index.js
+
+## LOGS מתוך CONTAINER
+ docker logs whatsapp_972504476645 --tail 50

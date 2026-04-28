@@ -11,7 +11,7 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
-const APP_VERSION = '1.0.0.1; // ← שנה רק כאן
+const APP_VERSION = '1.0.0.2'; 
 
 // ── Silence noisy Baileys logs ────────────────────────────────────────────────
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
