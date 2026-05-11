@@ -420,7 +420,26 @@ app.post('/resend-auth', async (req, res) => {
 app.post('/send/text', async (req, res) => {
   try {
     const r = await sock.sendMessage(normalizeJid(req.body.jid), { text: req.body.text });
-    res.json({ success: true, messageId: r?.key?.id });
+    const messageId = r?.key?.id;
+
+    // ← שלח webhook גם על הודעה יוצאת (Baileys לא שולח echo אוטומטי)
+    if (messageId) {
+      await sendToWebhooks({
+        event: 'message',
+        messageId,
+        jid: normalizeJid(req.body.jid),
+        type: 'text',
+        data: {
+          text: req.body.text,
+          fromMe: true,
+          pushName: null,
+          lid: null,
+        },
+        timestamp: Date.now(),
+      });
+    }
+
+    res.json({ success: true, messageId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
