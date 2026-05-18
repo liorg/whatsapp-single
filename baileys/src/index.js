@@ -11,9 +11,8 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
-const APP_VERSION = '1.0.0.2'; 
+const APP_VERSION = '1.0.0.4';
 
-// ── Silence noisy Baileys logs ────────────────────────────────────────────────
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
   'remoteIdentityKey','ephemeralKeyPair','lastRemoteEphemeralKey',
@@ -24,16 +23,12 @@ const _stderr = process.stderr.write.bind(process.stderr);
 process.stdout.write = (chunk, ...a) => isNoise(chunk) ? true : _stdout(chunk, ...a);
 process.stderr.write = (chunk, ...a) => isNoise(chunk) ? true : _stderr(chunk, ...a);
 
-// ── Logger ────────────────────────────────────────────────────────────────────
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   transport: { target: 'pino-pretty', options: { colorize: true } }
 });
 
-// ── Redis Streams ─────────────────────────────────────────────────────────────
 const redisStreams = new RedisStreams();
-
-// ── Contacts Storage ──────────────────────────────────────────────────────────
 const CONTACTS_FILE = '/app/data/contacts.json';
 
 function normalizeContactJid(jid) {
@@ -50,9 +45,7 @@ async function loadContacts() {
       const data = fs.readFileSync(CONTACTS_FILE, 'utf8');
       return JSON.parse(data);
     }
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to load contacts');
-  }
+  } catch (e) { logger.error({ err: e }, 'Failed to load contacts'); }
   return {};
 }
 
@@ -61,93 +54,64 @@ async function saveContact(jid, data) {
     const normalized = normalizeContactJid(jid);
     if (!normalized) return;
     const contacts = await loadContacts();
-    contacts[normalized] = {
-      ...data,
-      originalJid: jid,
-      lastSeen: new Date().toISOString()
-    };
+    contacts[normalized] = { ...data, originalJid: jid, lastSeen: new Date().toISOString() };
     fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2));
-  } catch (e) {
-    logger.error({ err: e, jid }, 'Failed to save contact');
-  }
+  } catch (e) { logger.error({ err: e, jid }, 'Failed to save contact'); }
 }
 
 async function getContacts(query = '', limit = 200) {
   try {
     const all = await loadContacts();
-    const items = Object.entries(all)
+    return Object.entries(all)
       .map(([jid, data]) => ({ jid, ...data }))
       .filter(c => {
         if (!query) return true;
-        const hay = `${c.jid} ${c.name || ''} ${c.notify || ''}`.toLowerCase();
-        return hay.includes(query.toLowerCase());
+        return `${c.jid} ${c.name || ''} ${c.notify || ''}`.toLowerCase().includes(query.toLowerCase());
       })
       .slice(0, Math.min(limit, 1000));
-    return items;
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to get contacts');
-    return [];
-  }
+  } catch (e) { logger.error({ err: e }, 'Failed to get contacts'); return []; }
 }
 
-// ── Send to all webhooks ─────────────────────────────────────────────────────
 async function sendToWebhooks(payload) {
   try {
     const webhooks = await redisStreams.listWebhooks();
     if (!webhooks || webhooks.length === 0) return;
-    
     await Promise.allSettled(
       webhooks.map(async (wh) => {
         const url = typeof wh === 'string' ? wh : wh.url;
         const secret = typeof wh === 'object' ? wh.secret : null;
         const headers = { 'Content-Type': 'application/json' };
         if (secret) headers['X-Webhook-Secret'] = secret;
-        
         try {
           const res = await fetch(url, {
-            method: 'POST',
-            headers,
+            method: 'POST', headers,
             body: JSON.stringify(payload),
             signal: AbortSignal.timeout(15000),
           });
           logger.info({ url, status: res.status, event: payload.event }, 'Webhook sent');
-        } catch (err) {
-          logger.warn({ url, err: err.message }, 'Failed to send webhook');
-        }
+        } catch (err) { logger.warn({ url, err: err.message }, 'Failed to send webhook'); }
       })
     );
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to send to webhooks');
-  }
+  } catch (e) { logger.error({ err: e }, 'Failed to send to webhooks'); }
 }
 
-// ── Helper: build authenticated payload ──────────────────────────────────────
 function buildAuthPayload() {
-  const raw      = fs.readFileSync('/app/auth_info/creds.json');
+  const raw = fs.readFileSync('/app/auth_info/creds.json');
   const creds_b64 = raw.toString('base64');
-  const jid      = sock.user?.id || '';
-  const phone    = jid.split('@')[0].split(':')[0];
-  return {
-    event:     'authenticated',
-    phone,
-    jid,
-    name:      sock.user?.name || null,
-    timestamp: new Date().toISOString(),
-    creds_b64,
-  };
+  const jid = sock.user?.id || '';
+  const phone = jid.split('@')[0].split(':')[0];
+  return { event: 'authenticated', phone, jid, name: sock.user?.name || null, timestamp: new Date().toISOString(), creds_b64 };
 }
 
-// ── WhatsApp State ────────────────────────────────────────────────────────────
-let sock       = null;
+let sock = null;
 let qrCodeData = null;
-let status     = 'disconnected';
+let status = 'disconnected';
 
-// ── Message Parser ────────────────────────────────────────────────────────────
 function unwrapMessage(message) {
   if (!message) return null;
-  if (message.ephemeralMessage?.message)   return unwrapMessage(message.ephemeralMessage.message);
-  if (message.viewOnceMessageV2?.message)  return unwrapMessage(message.viewOnceMessageV2.message);
-  if (message.viewOnceMessage?.message)    return unwrapMessage(message.viewOnceMessage.message);
+  if (message.ephemeralMessage?.message)  return unwrapMessage(message.ephemeralMessage.message);
+  if (message.viewOnceMessageV2?.message) return unwrapMessage(message.viewOnceMessageV2.message);
+  if (message.viewOnceMessage?.message)   return unwrapMessage(message.viewOnceMessage.message);
   return message;
 }
 
@@ -163,24 +127,60 @@ function parseMsg(msg) {
   if (c?.conversation || c?.extendedTextMessage) {
     type = 'text';
     data = { text: c.conversation || c.extendedTextMessage?.text };
+
   } else if (c?.imageMessage) {
     type = 'image';
     data = { caption: c.imageMessage.caption || null };
+
   } else if (c?.videoMessage) {
     type = 'video';
     data = { caption: c.videoMessage.caption || null };
+
   } else if (c?.audioMessage) {
     type = 'audio';
     data = {};
+
   } else if (c?.documentMessage) {
     type = 'document';
     data = { fileName: c.documentMessage.fileName || null };
+
+  } else if (c?.buttonsMessage) {
+    type = 'buttons';
+    data = {
+      text:    c.buttonsMessage.contentText || c.buttonsMessage.text || null,
+      footer:  c.buttonsMessage.footerText  || null,
+      buttons: (c.buttonsMessage.buttons || []).map((b, i) => ({
+        index:    i,
+        buttonId: b.buttonId || null,
+        label:    b.buttonText?.displayText || null,
+      })),
+    };
+
   } else if (c?.buttonsResponseMessage) {
     type = 'button_response';
     data = {
       buttonId:    c.buttonsResponseMessage.selectedButtonId    || null,
       displayText: c.buttonsResponseMessage.selectedDisplayText || null,
     };
+
+  } else if (c?.templateMessage) {
+    const hydrated = c.templateMessage.hydratedTemplate;
+    type = 'template';
+    data = {
+      text:    hydrated?.hydratedContentText || null,
+      buttons: (hydrated?.hydratedButtons || []).map(b => ({
+        label:    b.quickReplyButton?.displayText || b.urlButton?.displayText || null,
+        buttonId: b.quickReplyButton?.id || null,
+      })),
+    };
+
+  } else if (c?.templateButtonReplyMessage) {
+    type = 'template_button_response';
+    data = {
+      selectedId:  c.templateButtonReplyMessage.selectedId          || null,
+      displayText: c.templateButtonReplyMessage.selectedDisplayText || null,
+    };
+
   } else if (c?.listMessage) {
     type = 'list_message';
     const sections = c.listMessage.sections || [];
@@ -197,14 +197,16 @@ function parseMsg(msg) {
         })),
       })),
     };
+
   } else if (c?.listResponseMessage) {
     type = 'list_response';
     data = {
       rowId: c.listResponseMessage.singleSelectReply?.selectedRowId || null,
       title: c.listResponseMessage.title || null,
     };
+
   } else if (c?.interactiveResponseMessage || c?.interactiveMessage) {
-    const ir         = c.interactiveResponseMessage || c.interactiveMessage;
+    const ir = c.interactiveResponseMessage || c.interactiveMessage;
     const paramsJson = ir?.nativeFlowResponseMessage?.paramsJson;
     let parsed = null;
     if (paramsJson) { try { parsed = JSON.parse(paramsJson); } catch {} }
@@ -214,21 +216,14 @@ function parseMsg(msg) {
       bodyText:   ir?.body?.text || null,
       rawParams:  paramsJson    || null,
     };
-  } else if (c?.templateButtonReplyMessage) {
-    type = 'template_button_response';
-    data = {
-      selectedId:  c.templateButtonReplyMessage.selectedId          || null,
-      displayText: c.templateButtonReplyMessage.selectedDisplayText || null,
-    };
+
   } else if (c?.reactionMessage) {
     type = 'reaction';
     data = { emoji: c.reactionMessage.text || null };
+
   } else if (c?.locationMessage) {
     type = 'location';
-    data = {
-      lat: c.locationMessage.degreesLatitude,
-      lng: c.locationMessage.degreesLongitude,
-    };
+    data = { lat: c.locationMessage.degreesLatitude, lng: c.locationMessage.degreesLongitude };
   }
 
   if (type === 'unknown') {
@@ -236,95 +231,57 @@ function parseMsg(msg) {
     data = { rawType: keys[0] || null, keys };
   }
 
-  return {
-    messageId:  msg.key.id,
-    jid,
-    sender,
-    isGroup,
-    timestamp:  msg.messageTimestamp,
-    type,
-    data,
-    receivedAt: new Date().toISOString(),
-  };
+  return { messageId: msg.key.id, jid, sender, isGroup, timestamp: msg.messageTimestamp, type, data, receivedAt: new Date().toISOString() };
 }
 
-// ── Baileys ───────────────────────────────────────────────────────────────────
 async function connectWA() {
   const { state, saveCreds } = await useMultiFileAuthState('/app/auth_info');
   const { version }          = await fetchLatestBaileysVersion();
 
   sock = makeWASocket({
     version,
-    auth: {
-      creds: state.creds,
-      keys:  makeCacheableSignalKeyStore(state.keys, logger),
-    },
+    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     browser: ['ScenarioBot', 'Chrome', APP_VERSION],
   });
 
-  
   sock.ev.on('creds.update', async () => {
-  await saveCreds();
-  
-  // תן ל-saveCreds לסיים לכתוב את הקובץ
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  if (!fs.existsSync('/app/auth_info/creds.json')) return;
-  if (!sock?.user?.id) return;
-  const payload = buildAuthPayload();
-  await sendToWebhooks(payload);
-  logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
-});
+    await saveCreds();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (!fs.existsSync('/app/auth_info/creds.json')) return;
+    if (!sock?.user?.id) return;
+    const payload = buildAuthPayload();
+    await sendToWebhooks(payload);
+    logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
+  });
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      qrCodeData = qr;
-      status     = 'qr_ready';
-      logger.info('QR ready — open GET /qrcode/image to scan');
-      
-      await sendToWebhooks({
-        event: 'qr',
-        timestamp: new Date().toISOString(),
-      });
+      qrCodeData = qr; status = 'qr_ready';
+      logger.info('QR ready');
+      await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString() });
     }
     if (connection === 'open') {
-      qrCodeData = null;
-      status     = 'connected';
+      qrCodeData = null; status = 'connected';
       logger.info('WhatsApp connected');
-
-      try {
-        await sendToWebhooks(buildAuthPayload());
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to send creds on connection open');
-      }
+      try { await sendToWebhooks(buildAuthPayload()); } catch (e) { logger.error({ err: e }, 'Failed to send creds'); }
     }
     if (connection === 'close') {
-      status      = 'disconnected';
+      status = 'disconnected';
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
-      
-      await sendToWebhooks({
-        event: 'disconnected',
-        code,
-        retry,
-        timestamp: new Date().toISOString(),
-      });
-      
+      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString() });
       if (retry) setTimeout(connectWA, 3000);
     }
   });
-  
 
   sock.ev.on('contacts.update', async (updates) => {
     for (const contact of updates) {
       if (contact.id) {
         await saveContact(contact.id, {
-          name:         contact.name || contact.notify,
-          notify:       contact.notify,
-          verifiedName: contact.verifiedName,
-          isMyContact:  contact.isMyContact || false,
+          name: contact.name || contact.notify, notify: contact.notify,
+          verifiedName: contact.verifiedName, isMyContact: contact.isMyContact || false,
         });
       }
     }
@@ -334,111 +291,71 @@ async function connectWA() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const seen = new Set();
-
     for (const msg of messages) {
       if (!msg.message) continue;
       const msgId = msg.key.id;
       if (seen.has(msgId)) continue;
       seen.add(msgId);
-
-      if (msg.message?.senderKeyDistributionMessage &&
-          !msg.message?.conversation &&
-          !msg.message?.extendedTextMessage) continue;
+      if (msg.message?.senderKeyDistributionMessage && !msg.message?.conversation && !msg.message?.extendedTextMessage) continue;
       if (msg.message?.protocolMessage) continue;
 
       if (!msg.key.fromMe) {
-        const sender      = msg.key.participant || msg.key.remoteJid;
+        const sender = msg.key.participant || msg.key.remoteJid;
         const senderPhone = msg.key.participantPn || msg.key.senderPn || sender;
         if (sender && !sender.includes('@g.us')) {
-          await saveContact(senderPhone || sender, {
-            name:        msg.pushName,
-            notify:      msg.pushName,
-            isMyContact: true,
-          });
+          await saveContact(senderPhone || sender, { name: msg.pushName, notify: msg.pushName, isMyContact: true });
         }
       }
 
-      const parsed  = parseMsg(msg);
-      parsed.fromMe = msg.key.fromMe || false;
+      const parsed = parseMsg(msg);
+      parsed.fromMe   = msg.key.fromMe || false;
       parsed.pushName = msg.pushName || null;
-      
+
       await redisStreams.addMessage(parsed);
-      
       await sendToWebhooks({
-        event: 'message',
-        messageId: parsed.messageId,
-        jid: parsed.jid,
-        type: parsed.type,
-        data: {
-          ...parsed.data,
-          fromMe: parsed.fromMe,
-          pushName: parsed.pushName,
-          lid: parsed.sender,
-        },
+        event: 'message', messageId: parsed.messageId, jid: parsed.jid, type: parsed.type,
+        data: { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
         timestamp: parsed.timestamp,
       });
     }
   });
 }
 
-// ── Express API ───────────────────────────────────────────────────────────────
 const app  = express();
 const PORT = process.env.PORT || 3001;
 app.use(express.json());
 
-const normalizeJid = (raw) =>
-  raw.includes('@') ? raw : raw.replace(/\D/g, '') + '@s.whatsapp.net';
+const normalizeJid = (raw) => raw.includes('@') ? raw : raw.replace(/\D/g, '') + '@s.whatsapp.net';
 
-// Connection
-app.get('/status', (_, res) => res.json({ status }));
+app.get('/status',  (_, res) => res.json({ status }));
+app.get('/version', (_, res) => res.json({ version: APP_VERSION }));
 
 app.get('/qrcode', (_, res) => {
   if (!qrCodeData) return res.status(404).json({ error: 'QR not available', status });
   res.json({ qr: qrCodeData, status });
 });
 
-// ── Resend auth ← חדש! ───────────────────────────────────────────────────────
 app.post('/resend-auth', async (req, res) => {
   try {
-    if (status !== 'connected')
-      return res.status(400).json({ error: 'not connected', status });
-
-    if (!fs.existsSync('/app/auth_info/creds.json'))
-      return res.status(404).json({ error: 'creds.json not found' });
-
+    if (status !== 'connected') return res.status(400).json({ error: 'not connected', status });
+    if (!fs.existsSync('/app/auth_info/creds.json')) return res.status(404).json({ error: 'creds.json not found' });
     const payload = buildAuthPayload();
     await sendToWebhooks(payload);
-    logger.info({ phone: payload.phone }, 'Resent authenticated event');
     res.json({ success: true, phone: payload.phone });
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to resend auth');
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Send
 app.post('/send/text', async (req, res) => {
   try {
     const r = await sock.sendMessage(normalizeJid(req.body.jid), { text: req.body.text });
     const messageId = r?.key?.id;
-
-    // ← שלח webhook גם על הודעה יוצאת (Baileys לא שולח echo אוטומטי)
     if (messageId) {
       await sendToWebhooks({
-        event: 'message',
-        messageId,
-        jid: normalizeJid(req.body.jid),
-        type: 'text',
-        data: {
-          text: req.body.text,
-          fromMe: true,
-          pushName: null,
-          lid: null,
-        },
+        event: 'message', messageId, jid: normalizeJid(req.body.jid), type: 'text',
+        data: { text: req.body.text, fromMe: true, pushName: null, lid: null },
         timestamp: Date.now(),
       });
     }
-
     res.json({ success: true, messageId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -448,10 +365,7 @@ app.post('/send/buttons', async (req, res) => {
     const { jid: j, text, footer, buttons } = req.body;
     const r = await sock.sendMessage(normalizeJid(j), {
       text, footer: footer || '',
-      buttons: buttons.map((b, i) => ({
-        buttonId: b.id || `btn_${i}`,
-        buttonText: { displayText: b.text }, type: 1,
-      })),
+      buttons: buttons.map((b, i) => ({ buttonId: b.id || `btn_${i}`, buttonText: { displayText: b.text }, type: 1 })),
       headerType: 1,
     });
     res.json({ success: true, messageId: r?.key?.id });
@@ -462,14 +376,10 @@ app.post('/send/list', async (req, res) => {
   try {
     const { jid: j, text, title, buttonText, footer, sections } = req.body;
     const r = await sock.sendMessage(normalizeJid(j), {
-      text, title: title || '', footer: footer || '',
-      buttonText: buttonText || 'בחר אפשרות',
+      text, title: title || '', footer: footer || '', buttonText: buttonText || 'בחר אפשרות',
       sections: sections.map(s => ({
         title: s.title,
-        rows:  s.rows.map((row, i) => ({
-          title: row.title, description: row.description || '',
-          rowId: row.id || `row_${i}`,
-        })),
+        rows: s.rows.map((row, i) => ({ title: row.title, description: row.description || '', rowId: row.id || `row_${i}` })),
       })),
     });
     res.json({ success: true, messageId: r?.key?.id });
@@ -492,19 +402,16 @@ app.post('/send/list-response', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Webhooks
 app.post('/webhooks/register', async (req, res) => {
   const { url, secret } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
-  const success = await redisStreams.registerWebhook(url, secret);
-  res.json({ success });
+  res.json({ success: await redisStreams.registerWebhook(url, secret) });
 });
 
 app.delete('/webhooks/unregister', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
-  const success = await redisStreams.unregisterWebhook(url);
-  res.json({ success });
+  res.json({ success: await redisStreams.unregisterWebhook(url) });
 });
 
 app.get('/webhooks', async (req, res) => {
@@ -512,31 +419,18 @@ app.get('/webhooks', async (req, res) => {
   res.json({ webhooks, count: webhooks.length });
 });
 
-// Messages Stream
-app.get('/messages/stream/info', async (req, res) => {
-  const info = await redisStreams.getStreamInfo();
-  res.json(info);
-});
-
-app.get('/messages/stream/read', async (req, res) => {
-  const count  = parseInt(req.query.count  || '10');
-  const lastId = req.query.lastId || '0';
-  const messages = await redisStreams.readMessages(count, lastId);
+app.get('/messages/stream/info',  async (req, res) => res.json(await redisStreams.getStreamInfo()));
+app.get('/messages/stream/read',  async (req, res) => {
+  const messages = await redisStreams.readMessages(parseInt(req.query.count || '10'), req.query.lastId || '0');
   res.json({ messages, count: messages.length });
 });
-
-app.get('/messages/trace/:jid', async (req, res) => {
-  const jid      = req.params.jid;
-  const limit    = parseInt(req.query.limit || '100');
-  const messages = await redisStreams.getConversationHistory(jid, limit);
-  res.json({ jid, messages, count: messages.length });
+app.get('/messages/trace/:jid',   async (req, res) => {
+  const messages = await redisStreams.getConversationHistory(req.params.jid, parseInt(req.query.limit || '100'));
+  res.json({ jid: req.params.jid, messages, count: messages.length });
 });
 
-// Contacts
 app.get('/contacts', async (req, res) => {
-  const q     = req.query.q || '';
-  const limit = parseInt(req.query.limit || '200');
-  const items = await getContacts(q, limit);
+  const items = await getContacts(req.query.q || '', parseInt(req.query.limit || '200'));
   res.json({ count: items.length, items });
 });
 
@@ -545,16 +439,10 @@ app.get('/debug/contacts-count', async (req, res) => {
   res.json({ count: Object.keys(all).length });
 });
 
-// Logout
 app.delete('/logout', async (_, res) => {
-  try {
-    await sock.logout();
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  try { await sock.logout(); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/version', (_, res) => res.json({ version: APP_VERSION }));
 
 app.listen(PORT, () => {
   logger.info(`Baileys service on :${PORT}`);
