@@ -11,7 +11,7 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
-const APP_VERSION = '1.0.0.4';
+const APP_VERSION = '1.0.0.5';
 
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -95,12 +95,21 @@ async function sendToWebhooks(payload) {
   } catch (e) { logger.error({ err: e }, 'Failed to send to webhooks'); }
 }
 
+// שורה 98-104 — החלף את buildAuthPayload
 function buildAuthPayload() {
   const raw = fs.readFileSync('/app/auth_info/creds.json');
   const creds_b64 = raw.toString('base64');
   const jid = sock.user?.id || '';
   const phone = jid.split('@')[0].split(':')[0];
-  return { event: 'authenticated', phone, jid, name: sock.user?.name || null, timestamp: new Date().toISOString(), creds_b64 };
+  return { 
+    event: 'authenticated', 
+    phone, 
+    jid, 
+    name:          sock.user?.name || null, 
+    timestamp:     new Date().toISOString(), 
+    creds_b64,
+    authRevision:  parseInt(process.env.AUTH_REVISION || '0'),  // ← חדש
+  };
 }
 
 let sock = null;
