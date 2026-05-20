@@ -286,7 +286,9 @@ async def baileys_event(request: Request):
             "phone":     payload["phone"],
             "jid":       payload.get("jid"),
             "name":      payload.get("name"),
-            "timestamp": payload.get("timestamp"),
+            "timestamp": payload.get("timestamp"),   
+            "authSessionId": payload.get("authSessionId"),
+            "phoneId":       payload.get("phoneId"),
         }))
 
     await forward_to_webhooks(redis, payload)
