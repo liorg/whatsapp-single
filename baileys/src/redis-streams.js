@@ -8,7 +8,10 @@ const logger = pino({
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const STREAM_KEY = process.env.REDIS_STREAM_KEY || 'whatsapp:messages';
-const WEBHOOKS_KEY = 'whatsapp:webhooks';
+const PHONE_ID    = process.env.PHONE_ID || 'default';
+const WEBHOOK_KEY = `webhooks:${PHONE_ID}`;
+// כל שימוש ב-webhooks key — החלף ל-WEBHOOK_KEY
+//const WEBHOOKS_KEY = 'whatsapp:webhooks';
 const MAX_STREAM_LENGTH = parseInt(process.env.MAX_STREAM_LENGTH || '10000');
 
 class RedisStreams {
