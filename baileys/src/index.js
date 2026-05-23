@@ -10,8 +10,8 @@ import {
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
-
-const APP_VERSION = '1.0.0.6';
+const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
+const APP_VERSION = '1.0.0.7';
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
