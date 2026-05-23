@@ -11,7 +11,7 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
-const APP_VERSION = '1.0.0.5';
+const APP_VERSION = '1.0.0.6';
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -109,6 +109,7 @@ function buildAuthPayload() {
     creds_b64,
     authRevision:  parseInt(process.env.AUTH_REVISION || '0'),  
     userDisplay:  process.env.USER_DISPLAY || '****anon',  // ← חדש
+    phoneId:      process.env.PHONE_ID || null,  // ← חדש
 
   };
 }
@@ -271,7 +272,7 @@ async function connectWA() {
     if (qr) {
       qrCodeData = qr; status = 'qr_ready';
       logger.info('QR ready');
-      await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString() });
+      await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString() , phoneId: PHONE_ID });
     }
     if (connection === 'open') {
       qrCodeData = null; status = 'connected';
@@ -283,7 +284,7 @@ async function connectWA() {
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
-      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString() });
+      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString() , phoneId: PHONE_ID });
       if (retry) setTimeout(connectWA, 3000);
     }
   });
@@ -324,11 +325,23 @@ async function connectWA() {
       parsed.pushName = msg.pushName || null;
 
       await redisStreams.addMessage(parsed);
+    if (parsed.fromMe) {
       await sendToWebhooks({
-        event: 'message', messageId: parsed.messageId, jid: parsed.jid, type: parsed.type,
-        data: { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
+        event:     'message',
+        messageId: parsed.messageId,
+        jid:       parsed.jid,
+        type:      parsed.type,
+        data:      { ...parsed.data, fromMe: true, pushName: parsed.pushName, lid: parsed.sender },
         timestamp: parsed.timestamp,
+        phoneId:   PHONE_ID,  // ← חדש
       });
+    }
+      
+     // await sendToWebhooks({
+     //   event: 'message', messageId: parsed.messageId, jid: parsed.jid, type: parsed.type,
+      //  data: { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
+     //   timestamp: parsed.timestamp,
+   //   });
     }
   });
 }
