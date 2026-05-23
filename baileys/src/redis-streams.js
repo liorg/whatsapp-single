@@ -26,6 +26,7 @@ class RedisStreams {
   }
 
   // ── Add message to stream ─────────────────────────────────────────────────
+  /*
   async addMessage(msg) {
     try {
       const id = await this.redis.xadd(
@@ -46,7 +47,30 @@ class RedisStreams {
       throw e;
     }
   }
+  */
+  async addMessage(msg) {
+  try {
+    // ── הוסף phoneId לכל הודעה ──────────────────────────────────
+    const enriched = { ...msg, phoneId: PHONE_ID };
 
+    const id = await this.redis.xadd(
+      STREAM_KEY,
+      'MAXLEN', '~', MAX_STREAM_LENGTH,
+      '*',
+      'data', JSON.stringify(enriched)  // ← enriched במקום msg
+    );
+
+    logger.debug({ id, jid: msg.jid }, 'Message added to stream');
+
+    // שלח ל-webhooks עם phoneId
+    await this.sendToWebhooks(enriched);  // ← enriched במקום msg
+
+    return id;
+  } catch (e) {
+    logger.error({ err: e }, 'Failed to add message to stream');
+    throw e;
+  }
+}
   // ── Send to registered webhooks ───────────────────────────────────────────
   async sendToWebhooks(msg) {
     try {
