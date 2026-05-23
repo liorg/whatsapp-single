@@ -12,7 +12,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 
 const APP_VERSION = '1.0.0.5';
-
+const  user_display= process.env.USER_DISPLAY || '****anon';
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
   'remoteIdentityKey','ephemeralKeyPair','lastRemoteEphemeralKey',
@@ -95,7 +95,6 @@ async function sendToWebhooks(payload) {
   } catch (e) { logger.error({ err: e }, 'Failed to send to webhooks'); }
 }
 
-// שורה 98-104 — החלף את buildAuthPayload
 function buildAuthPayload() {
   const raw = fs.readFileSync('/app/auth_info/creds.json');
   const creds_b64 = raw.toString('base64');
@@ -108,7 +107,9 @@ function buildAuthPayload() {
     name:          sock.user?.name || null, 
     timestamp:     new Date().toISOString(), 
     creds_b64,
-    authRevision:  parseInt(process.env.AUTH_REVISION || '0'),  // ← חדש
+    authRevision:  parseInt(process.env.AUTH_REVISION || '0'),  
+    userDisplay:  process.env.USER_DISPLAY || '****anon',  // ← חדש
+
   };
 }
 
@@ -247,11 +248,13 @@ async function connectWA() {
   const { state, saveCreds } = await useMultiFileAuthState('/app/auth_info');
   const { version }          = await fetchLatestBaileysVersion();
 
-  sock = makeWASocket({
+  // sock = makeWASocket({ version,   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger,  browser: ['ScenarioBot', 'Chrome', APP_VERSION],});
+
+    sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
-    browser: ['ScenarioBot', 'Chrome', APP_VERSION],
+    browser: [user_display, 'Chrome', APP_VERSION],
   });
 
   sock.ev.on('creds.update', async () => {
