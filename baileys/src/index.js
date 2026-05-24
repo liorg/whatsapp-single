@@ -11,7 +11,7 @@ import {
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.7';
+const APP_VERSION = '1.0.0.8';
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -73,6 +73,10 @@ async function getContacts(query = '', limit = 200) {
 }
 
 async function sendToWebhooks(payload) {
+  return redisStreams.sendToWebhooks(payload);
+}
+
+async function sendToWebhooksold(payload) {
   try {
     const webhooks = await redisStreams.listWebhooks();
     if (!webhooks || webhooks.length === 0) return;
@@ -325,7 +329,7 @@ async function connectWA() {
       parsed.pushName = msg.pushName || null;
 
       await redisStreams.addMessage(parsed);
-    if (parsed.fromMe) {
+    
       await sendToWebhooks({
         event:     'message',
         messageId: parsed.messageId,
@@ -335,7 +339,7 @@ async function connectWA() {
         timestamp: parsed.timestamp,
         phoneId:   PHONE_ID,  // ← חדש
       });
-    }
+    
       
      // await sendToWebhooks({
      //   event: 'message', messageId: parsed.messageId, jid: parsed.jid, type: parsed.type,
