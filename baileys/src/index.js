@@ -13,7 +13,7 @@ import RedisStreams from './redis-streams.js';
 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.9';
+const APP_VERSION = '1.0.0.10';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
