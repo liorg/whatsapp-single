@@ -13,7 +13,7 @@ const PHONE_ID    = process.env.PHONE_ID || 'default';
 
 const WEBHOOK_KEY = `webhooks:${PHONE_ID}`;
 
-const STREAM_KEY =  process.env.REDIS_STREAM_KEY || `whatsapp:messages:${PHONE_ID}`;   // process.env.REDIS_STREAM_KEY || 'whatsapp:messages';
+const STREAM_KEY = `whatsapp:messages:${PHONE_ID}`;   // process.env.REDIS_STREAM_KEY || 'whatsapp:messages';
 
 // כל שימוש ב-webhooks key — החלף ל-WEBHOOK_KEY
 //const WEBHOOKS_KEY = 'whatsapp:webhooks';
