@@ -63,10 +63,11 @@ class RedisStreams {
   async sendToWebhooks(msg) {
     try {
       // ✅ שלח רק הודעות נכנסות (לא שלי)
-      if (msg.fromMe) {
-        logger.debug({ jid: msg.jid }, 'Skipping webhook for outgoing message');
-        return;
-      }
+    //  if (msg.fromMe) {
+      //  logger.debug({ jid: msg.jid }, 'Skipping webhook for outgoing message');
+      //  return;
+      //_}
+      
       
       const webhooks = await this.redis.smembers(WEBHOOKS_KEY);
       
