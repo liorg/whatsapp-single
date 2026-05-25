@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 BAILEYS_URL = "http://localhost:3001"
 REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379")
 
+MANAGER_URL = os.getenv("MANAGER_URL", "http://172.17.0.1:5000")
+PHONE_ID    = os.getenv("PHONE_ID", "")
+
 # ── Redis ─────────────────────────────────────────────────────────────────────
 redis_client: aioredis.Redis | None = None
 
@@ -350,3 +353,23 @@ async def health():
         "redis":   "ok" if redis_ok   else "error",
         "baileys": "ok" if baileys_ok else "error",
     }
+
+@app.get("/media/{message_id}", tags=["Media"])
+async def get_media(message_id: str):
+    """מעביר ל-C# Manager שמגיש את הקובץ מה-Volume"""
+    if not PHONE_ID:
+        raise HTTPException(500, "PHONE_ID not set")
+    url = f"{MANAGER_URL}/api/media/{PHONE_ID}/{message_id}"
+    async with httpx.AsyncClient(timeout=10) as c:
+        try:
+            r = await c.get(url)
+            if r.status_code == 404:
+                raise HTTPException(404, "Media not found")
+            return StreamingResponse(
+                io.BytesIO(r.content),
+                media_type=r.headers.get("content-type", "application/octet-stream")
+            )                                                          # ← חסר!
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(503, f"Manager unavailable: {e}")

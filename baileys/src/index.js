@@ -6,16 +6,20 @@ import {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+   downloadMediaMessage,   // ← רק להוסיף כאן
+
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
-
+import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.13';
+const APP_VERSION = '1.0.0.14';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
+
+
 
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -34,6 +38,25 @@ const logger = pino({
 
 const redisStreams = new RedisStreams();
 const CONTACTS_FILE = '/app/data/contacts.json';
+
+const MEDIA_BASE = '/app/data/media';
+
+async function saveMedia(msg, messageId, mimeType) {
+  try {
+    fs.mkdirSync(MEDIA_BASE, { recursive: true });
+    const buffer   = await downloadMediaMessage(msg, 'buffer', {},
+      { logger, reuploadRequest: sock.updateMediaMessage });
+    const ext      = (mimeType || 'image/jpeg').split('/')[1].split(';')[0];
+    const filePath = `${MEDIA_BASE}/${messageId}.${ext}`;
+    fs.writeFileSync(filePath, buffer);
+    logger.info({ filePath, size: buffer.length }, '[MEDIA] Saved');
+    return filePath;
+  } catch (e) {
+    logger.warn({ err: e.message }, '[MEDIA] Failed to save');
+    return null;
+  }
+}
+
 
 function normalizeContactJid(jid) {
   if (!jid) return null;
@@ -136,20 +159,21 @@ function parseMsg(msg) {
   if (c?.conversation || c?.extendedTextMessage) {
     type = 'text';
     data = { text: c.conversation || c.extendedTextMessage?.text };
-
-  } else if (c?.imageMessage) {
+  } 
+ // ── image ─────────────────────────────────────────────────────────
+ else if (c?.imageMessage) {
     type = 'image';
-    data = { caption: c.imageMessage.caption || null };
-
-  } else if (c?.videoMessage) {
+    data = { caption: c.imageMessage.caption || null };  // כרגע רק caption
+  } else if (c?.audioMessage) {
+    type = 'audio';
+    data = {};  // כרגע ריק
+  }
+  else if (c?.videoMessage) {
     type = 'video';
     data = { caption: c.videoMessage.caption || null };
 
-  } else if (c?.audioMessage) {
-    type = 'audio';
-    data = {};
-
-  } else if (c?.documentMessage) {
+  } 
+  else if (c?.documentMessage) {
     type = 'document';
     data = { fileName: c.documentMessage.fileName || null };
 
@@ -321,6 +345,14 @@ async function connectWA() {
       const parsed = parseMsg(msg);
       parsed.fromMe   = msg.key.fromMe || false;
       parsed.pushName = msg.pushName || null;
+
+      // ✅ הוסף כאן — הורדה async בתוך async context
+      if (parsed.type === 'image' || parsed.type === 'audio') {
+        const mediaPath = await saveMedia(msg, parsed.messageId, parsed.data.mimeType);
+        parsed.data.mediaPath = mediaPath;
+        parsed.data.mediaUrl  = mediaPath ? `/media/${parsed.messageId}` : null;
+      }
+
 
       await redisStreams.addMessage(parsed);
     
