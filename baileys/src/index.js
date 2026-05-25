@@ -13,7 +13,7 @@ import RedisStreams from './redis-streams.js';
 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.12';
+const APP_VERSION = '1.0.0.13';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
@@ -443,14 +443,6 @@ app.post('/send/button-response', async (req, res) => {
       lid: null,
     });
     res.json({ success: true, messageId: r?.key?.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/send/list-response', async (req, res) => {
-  try {
-    const { jid: j, rowId, title } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), { text: title || rowId });
-    res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
