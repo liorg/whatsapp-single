@@ -13,7 +13,7 @@ import RedisStreams from './redis-streams.js';
 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.11';
+const APP_VERSION = '1.0.0.12';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
@@ -467,6 +467,15 @@ app.post('/send/list-response', async (req, res) => {
     });
     res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text' });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── הוסף ב-index.js לפני app.listen ──────────────────────────────────────────
+
+app.post('/webhooks/register', async (req, res) => {
+  const { url, secret } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const success = await redisStreams.registerWebhook(url, secret);
+  res.json({ success, url, key: `webhooks:${PHONE_ID}` });
 });
 
 app.delete('/webhooks/unregister', async (req, res) => {

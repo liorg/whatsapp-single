@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BAILEYS_URL = "http://localhost:3001"
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 redis_client: aioredis.Redis | None = None
@@ -97,41 +97,21 @@ async def baileys_delete(path: str, data: dict = None) -> dict:
         r.raise_for_status()
         return r.json()
 
-async def forward_to_webhooks(redis, payload: dict) -> None:
-    """מעביר payload לכל webhooks חיצוניים רשומים ב-Redis."""
-    try:
-        import json
-        raw = await redis.get("wa:external_hooks")
-        webhooks = json.loads(raw) if raw else []
-        if not webhooks:
-            return
-        async with httpx.AsyncClient(timeout=10) as c:
-            for wh in webhooks:
-                try:
-                    headers = {"Content-Type": "application/json"}
-                    if wh.get("secret"):
-                        headers["X-Webhook-Secret"] = wh["secret"]
-                    await c.post(wh["url"], json=payload, headers=headers)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="WhatsApp Gateway",
-    version="2.0.0",
+    version="2.1.0",
     description="""
 ## 📱 WhatsApp Gateway
 
 ### תיאור:
 - FastAPI חשוף לאינטרנט — לקוחות חיצוניים מתחברים לכאן
-- Baileys פנימי בלבד — מתקשר עם WhatsApp
+- Baileys פנימי בלבד — מתקשר עם WhatsApp ומנהל webhooks
 
 ### Endpoints:
 - **Connection**: status, QR, logout
 - **Send**: text, buttons, list
-- **Webhooks**: רשום endpoint לקבלת הודעות נכנסות
+- **Webhooks**: רשום endpoint לקבלת הודעות נכנסות (מנוהל ע"י Baileys)
 - **Messages**: קרא הודעות מה-stream
 - **Contacts**: רשימת אנשי קשר
 """,
@@ -141,7 +121,6 @@ app = FastAPI(
 # ── Connection ────────────────────────────────────────────────────────────────
 @app.get("/status", tags=["Connection"])
 async def status():
-    """סטטוס החיבור ל-WhatsApp"""
     try:
         return await baileys_get("/status")
     except Exception as e:
@@ -149,7 +128,6 @@ async def status():
 
 @app.get("/qrcode", tags=["Connection"])
 async def get_qrcode():
-    """QR Code כ-JSON עם base64 תמונה"""
     try:
         r = await baileys_get("/qrcode")
         img_b64 = None
@@ -166,7 +144,6 @@ async def get_qrcode():
 
 @app.get("/qrcode/image", tags=["Connection"])
 async def qrcode_image():
-    """QR Code כתמונת PNG — פתח בדפדפן וסרוק"""
     try:
         r = await baileys_get("/qrcode")
         if not r.get("qr"):
@@ -183,138 +160,55 @@ async def qrcode_image():
 
 @app.delete("/logout", tags=["Connection"])
 async def logout():
-    """התנתק מ-WhatsApp"""
     return await baileys_delete("/logout")
 
 # ── Send ──────────────────────────────────────────────────────────────────────
 @app.post("/send/text", tags=["Send"])
 async def send_text(b: TextMsg):
-    """שלח הודעת טקסט"""
     return await baileys_post("/send/text", b.model_dump())
 
 @app.post("/send/buttons", tags=["Send"])
 async def send_buttons(b: ButtonMsg):
-    """שלח כפתורים (עד 3) — Business API בלבד"""
     return await baileys_post("/send/buttons", b.model_dump())
 
 @app.post("/send/list", tags=["Send"])
 async def send_list(b: ListMsg):
-    """שלח תפריט צף"""
     return await baileys_post("/send/list", b.model_dump())
 
 @app.post("/send/button-response", tags=["Send"])
 async def send_button_response(b: ButtonResponse):
-    """סימולציה של לחיצת כפתור"""
     return await baileys_post("/send/button-response", b.model_dump())
 
 @app.post("/send/list-response", tags=["Send"])
 async def send_list_response(b: ListResponse):
-    """סימולציה של בחירה מתפריט"""
     return await baileys_post("/send/list-response", b.model_dump())
 
-# ── Webhooks (לקוחות חיצוניים רושמים כאן) ───────────────────────────────────
+# ── Webhooks — מנוהל ע"י Baileys ישירות ─────────────────────────────────────
 @app.post("/webhooks/register", tags=["Webhooks"])
-async def register_webhook(request: Request, b: WebhookRegister):
-    """
-    רשום webhook לקבלת הודעות נכנסות מ-WhatsApp.
-
-    הודעות יישלחו כ-POST:
-    ```json
-    {
-      "event": "message",
-      "messageId": "...",
-      "jid": "972501234567@s.whatsapp.net",
-      "type": "text",
-      "data": {"text": "שלום"},
-      "timestamp": 1234567890
-    }
-    ```
-    """
-    import json
-    redis = request.app.state.redis
-    raw   = await redis.get("wa:external_hooks")
-    hooks = json.loads(raw) if raw else []
-
-    if not any(h["url"] == b.url for h in hooks):
-        hooks.append({"url": b.url, "secret": b.secret})
-        await redis.set("wa:external_hooks", json.dumps(hooks))
-
-    # גם רשום ב-Baileys לקבלת הודעות
-    await baileys_post("/webhooks/register", b.model_dump())
-
-    return {"success": True, "url": b.url, "total": len(hooks)}
+async def register_webhook(b: WebhookRegister):
+    """רשום webhook — נשמר ב-Baileys/Redis לפי PHONE_ID"""
+    return await baileys_post("/webhooks/register", b.model_dump())
 
 @app.delete("/webhooks/unregister", tags=["Webhooks"])
-async def unregister_webhook(request: Request, b: WebhookUnregister):
-    """הסר webhook"""
-    import json
-    redis = request.app.state.redis
-    raw   = await redis.get("wa:external_hooks")
-    hooks = json.loads(raw) if raw else []
-    hooks = [h for h in hooks if h["url"] != b.url]
-    await redis.set("wa:external_hooks", json.dumps(hooks))
-
-    await baileys_delete("/webhooks/unregister", b.model_dump())
-    return {"success": True, "total": len(hooks)}
+async def unregister_webhook(b: WebhookUnregister):
+    return await baileys_delete("/webhooks/unregister", b.model_dump())
 
 @app.get("/webhooks", tags=["Webhooks"])
-async def list_webhooks(request: Request):
-    """רשימת webhooks רשומים"""
-    import json
-    redis = request.app.state.redis
-    raw   = await redis.get("wa:external_hooks")
-    hooks = json.loads(raw) if raw else []
-    safe  = [{"url": h["url"], "has_secret": bool(h.get("secret"))} for h in hooks]
-    return {"webhooks": safe, "count": len(safe)}
+async def list_webhooks():
+    return await baileys_get("/webhooks")
 
-# ── Incoming events from Baileys ─────────────────────────────────────────────
-@app.post("/internal/baileys-event", include_in_schema=False)
-async def baileys_event(request: Request):
-    """
-    Baileys שולח לכאן כל אירוע (הודעה / authenticated).
-    - authenticated → שומר creds_b64 + phone ב-Redis
-    - הכל → מעביר לכל webhooks חיצוניים
-    """
-    import json
-    payload = await request.json()
-    redis   = request.app.state.redis
-
-    # שמור creds אם זה אירוע authenticated
-    if payload.get("event") == "authenticated" and payload.get("phone") and payload.get("creds_b64"):
-        await redis.set(f"wa:creds:{payload['phone']}", payload["creds_b64"])
-        await redis.set("wa:last_auth", json.dumps({
-            "phone":     payload["phone"],
-            "jid":       payload.get("jid"),
-            "name":      payload.get("name"),
-            "timestamp": payload.get("timestamp")
-        }))
-
-    await forward_to_webhooks(redis, payload)
-    return {"ok": True}
-
-
-# ── Auth info endpoints ────────────────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
 @app.get("/auth/status", tags=["Auth"])
 async def auth_status(request: Request):
-    """מראה מי מחובר כרגע ומתי התאמת לאחרונה."""
     import json
     redis = request.app.state.redis
     raw   = await redis.get("wa:last_auth")
     if not raw:
         return {"authenticated": False}
-    info = json.loads(raw)
-    return {"authenticated": True, **info}
-
+    return {"authenticated": True, **json.loads(raw)}
 
 @app.get("/auth/creds/{phone}", tags=["Auth"])
 async def get_creds(request: Request, phone: str):
-    """
-    מחזיר את creds_b64 של חשבון לפי phone.
-    לשחזור במכונה חדשה:
-    1. קבל את creds_b64
-    2. base64decode → כתוב ל-/app/auth_info/creds.json
-    3. הפעל מחדש — אין צורך בסריקת QR
-    """
     redis = request.app.state.redis
     val   = await redis.get(f"wa:creds:{phone}")
     if not val:
@@ -326,17 +220,14 @@ async def get_creds(request: Request, phone: str):
         "preview":          val[:40] + "...",
     }
 
-
-# ── Auth Dashboard ────────────────────────────────────────────────────────────
 @app.get("/auth/dashboard", tags=["Auth"])
 async def auth_dashboard(request: Request):
-    """דף HTML — מצב אימות + creds_b64"""
     import json
     from fastapi.responses import HTMLResponse
 
-    redis    = request.app.state.redis
-    raw      = await redis.get("wa:last_auth")
-    auth     = json.loads(raw) if raw else None
+    redis        = request.app.state.redis
+    raw          = await redis.get("wa:last_auth")
+    auth         = json.loads(raw) if raw else None
     creds_b64    = None
     creds_length = 0
     if auth and auth.get("phone"):
@@ -370,10 +261,7 @@ async def auth_dashboard(request: Request):
     </div>"""
 
     html = f"""<!DOCTYPE html>
-<html dir="rtl" lang="he">
-<head>
-<meta charset="UTF-8">
-<title>Auth Dashboard</title>
+<html dir="rtl" lang="he"><head><meta charset="UTF-8"><title>Auth Dashboard</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;padding:2rem}}
@@ -389,11 +277,8 @@ h1{{font-size:1.4rem;margin-bottom:1.5rem;color:#f8fafc}}
 .btn{{display:inline-block;margin-top:.75rem;padding:.45rem 1.1rem;border-radius:8px;background:#3b82f6;color:#fff;text-decoration:none;font-size:.82rem;margin-left:.5rem}}
 .btn:hover{{background:#2563eb}}
 .copy{{font-size:.7rem;background:#334155;border:none;color:#94a3b8;padding:.2rem .5rem;border-radius:4px;cursor:pointer;margin-right:.5rem}}
-.copy:hover{{color:#f1f5f9}}
 .actions{{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.75rem}}
-</style>
-</head>
-<body>
+</style></head><body>
 <h1>WhatsApp Auth Dashboard</h1>
 <div class="card">
   <div class="lbl">סטטוס</div>
@@ -411,8 +296,7 @@ h1{{font-size:1.4rem;margin-bottom:1.5rem;color:#f8fafc}}
     <a class="btn" href="/auth/dashboard">רענן</a>
   </div>
 </div>
-</body>
-</html>"""
+</body></html>"""
     return HTMLResponse(html)
 
 # ── Messages ──────────────────────────────────────────────────────────────────
@@ -421,17 +305,11 @@ async def stream_info():
     return await baileys_get("/messages/stream/info")
 
 @app.get("/messages/stream/read", tags=["Messages"])
-async def stream_read(
-    count: int  = Query(10, ge=1, le=100),
-    lastId: str = Query("0")
-):
+async def stream_read(count: int = Query(10, ge=1, le=100), lastId: str = Query("0")):
     return await baileys_get(f"/messages/stream/read?count={count}&lastId={lastId}")
 
 @app.get("/messages/trace/{jid}", tags=["Messages"])
-async def trace_conversation(
-    jid: str,
-    limit: int = Query(100, ge=1, le=500)
-):
+async def trace_conversation(jid: str, limit: int = Query(100, ge=1, le=500)):
     try:
         return await baileys_get(f"/messages/trace/{jid}?limit={limit}")
     except Exception as e:
@@ -439,45 +317,36 @@ async def trace_conversation(
 
 # ── Contacts ──────────────────────────────────────────────────────────────────
 @app.get("/contacts", tags=["Contacts"])
-async def get_contacts(
-    q: str     = Query("", description="חיפוש לפי שם או מספר"),
-    limit: int = Query(200, ge=1, le=1000)
-):
+async def get_contacts(q: str = Query(""), limit: int = Query(200, ge=1, le=1000)):
     return await baileys_get(f"/contacts?q={q}&limit={limit}")
 
 @app.get("/contacts/count", tags=["Contacts"])
 async def contacts_count():
     return await baileys_get("/debug/contacts-count")
 
+# ── System ────────────────────────────────────────────────────────────────────
 @app.get("/version", tags=["System"])
 async def version():
     try:
-        r = await baileys_get("/version")
-        return r
+        return await baileys_get("/version")
     except Exception as e:
         raise HTTPException(503, f"Baileys unavailable: {e}")
-    
-    
-# ── Health ────────────────────────────────────────────────────────────────────
+
 @app.get("/health", tags=["System"])
 async def health():
-    redis_ok = False
+    redis_ok = baileys_ok = False
     try:
         await redis_client.ping()
         redis_ok = True
     except Exception:
         pass
-
-    baileys_ok = False
     try:
         await baileys_get("/status")
         baileys_ok = True
     except Exception:
         pass
-
     return {
         "status":  "healthy" if (redis_ok and baileys_ok) else "degraded",
         "redis":   "ok" if redis_ok   else "error",
         "baileys": "ok" if baileys_ok else "error",
     }
-
