@@ -15,7 +15,7 @@ import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.14';
+const APP_VERSION = '1.0.0.15';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
@@ -159,20 +159,23 @@ function parseMsg(msg) {
   if (c?.conversation || c?.extendedTextMessage) {
     type = 'text';
     data = { text: c.conversation || c.extendedTextMessage?.text };
+  // ✅ אחרי — עם mimeType כדי ש-saveMedia יידע את הextension
   } 
- // ── image ─────────────────────────────────────────────────────────
- else if (c?.imageMessage) {
-    type = 'image';
-    data = { caption: c.imageMessage.caption || null };  // כרגע רק caption
-  } else if (c?.audioMessage) {
-    type = 'audio';
-    data = {};  // כרגע ריק
-  }
-  else if (c?.videoMessage) {
-    type = 'video';
-    data = { caption: c.videoMessage.caption || null };
-
-  } 
+else if (c?.imageMessage) {
+  type = 'image';
+  data = {
+    caption:  c.imageMessage.caption  || null,
+    mimeType: c.imageMessage.mimetype || 'image/jpeg',  // ← נחוץ ל-saveMedia!
+  };
+} 
+else if (c?.audioMessage) {
+  type = 'audio';
+  data = {
+    mimeType: c.audioMessage.mimetype || 'audio/ogg',   // ← נחוץ ל-saveMedia!
+    duration: c.audioMessage.seconds  || null,
+    isPtt:    c.audioMessage.ptt      || false,
+  };
+}
   else if (c?.documentMessage) {
     type = 'document';
     data = { fileName: c.documentMessage.fileName || null };
