@@ -69,7 +69,7 @@ class RedisStreams {
               'User-Agent':       'WhatsApp-Baileys/1.0'
             },
             body:   JSON.stringify(payload),
-            signal: AbortSignal.timeout(10000)
+            signal: AbortSignal.timeout(30000)
           });
 
           if (!response.ok) {
