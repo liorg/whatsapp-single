@@ -43,16 +43,18 @@ const MEDIA_BASE = '/app/data/media';
 
 async function saveMedia(msg, messageId, mimeType) {
   try {
+    logger.warn({ messageId, mimeType, sockExists: !!sock }, '[MEDIA] saveMedia start');
     fs.mkdirSync(MEDIA_BASE, { recursive: true });
-    const buffer   = await downloadMediaMessage(msg, 'buffer', {},
+    const buffer = await downloadMediaMessage(msg, 'buffer', {},
       { logger, reuploadRequest: sock.updateMediaMessage });
+    logger.warn({ size: buffer.length }, '[MEDIA] buffer downloaded');
     const ext      = (mimeType || 'image/jpeg').split('/')[1].split(';')[0];
     const filePath = `${MEDIA_BASE}/${messageId}.${ext}`;
     fs.writeFileSync(filePath, buffer);
-    logger.info({ filePath, size: buffer.length }, '[MEDIA] Saved');
+    logger.warn({ filePath }, '[MEDIA] Saved');
     return filePath;
   } catch (e) {
-    logger.warn({ err: e.message }, '[MEDIA] Failed to save');
+    logger.warn({ err: e.message, stack: e.stack }, '[MEDIA] Failed to save');
     return null;
   }
 }

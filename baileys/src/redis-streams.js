@@ -91,6 +91,7 @@ class RedisStreams {
   // ── Register webhook ──────────────────────────────────────────────────────
   async registerWebhook(url, secret = null) {
     try {
+        await this.unregisterWebhook(url);
       const data = JSON.stringify({ url, secret, registeredAt: new Date().toISOString() });
       // ✅ תוקן: WEBHOOK_KEY
       await this.redis.sadd(WEBHOOK_KEY, data);
