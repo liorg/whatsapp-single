@@ -15,7 +15,7 @@ import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.15';
+const APP_VERSION = '1.0.0.16';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
@@ -176,6 +176,11 @@ else if (c?.audioMessage) {
     isPtt:    c.audioMessage.ptt      || false,
   };
 }
+else if (c?.videoMessage) {
+  type = 'video';
+  data = { caption: c.videoMessage.caption || null };
+
+} 
   else if (c?.documentMessage) {
     type = 'document';
     data = { fileName: c.documentMessage.fileName || null };
