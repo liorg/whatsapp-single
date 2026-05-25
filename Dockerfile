@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y \
 # ── Python venv ───────────────────────────────────────────────────────────────
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
 COPY fastapi/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
@@ -20,7 +19,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 WORKDIR /app/baileys
 COPY baileys/package.json ./
 RUN npm install --omit=dev
-
 COPY baileys/src/ ./src/
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
@@ -31,14 +29,21 @@ COPY fastapi/app/ ./app/
 RUN pip install supervisor
 COPY supervisord.conf /etc/supervisord.conf
 
-# ── Auth dir ──────────────────────────────────────────────────────────────────
-RUN mkdir -p /app/auth_info
+# ── Auth + Media dirs ─────────────────────────────────────────────────────────
+RUN mkdir -p /app/auth_info /app/data/media
+
+# ── Default ENV — נדרס ע"י DockerService בהפעלה ──────────────────────────────
+ENV REDIS_URL="redis://redis_shared:6379"
+ENV PHONE_ID=""
+ENV AUTH_REVISION="0"
+ENV USER_DISPLAY="****anon"
+ENV MANAGER_URL="http://172.17.0.1:5000"
+ENV LOG_LEVEL="info"
 
 WORKDIR /app
-
 EXPOSE 8000 3001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-  CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["supervisord", "-c", "/etc/supervisord.conf", "-n"]
