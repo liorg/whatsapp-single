@@ -13,7 +13,7 @@ import RedisStreams from './redis-streams.js';
 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
 
-const APP_VERSION = '1.0.0.10';
+const APP_VERSION = '1.0.0.11';
 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 
@@ -80,28 +80,6 @@ async function sendToWebhooks(payload) {
   return redisStreams.sendToWebhooks(payload);
 }
 
-async function sendToWebhooksold(payload) {
-  try {
-    const webhooks = await redisStreams.listWebhooks();
-    if (!webhooks || webhooks.length === 0) return;
-    await Promise.allSettled(
-      webhooks.map(async (wh) => {
-        const url = typeof wh === 'string' ? wh : wh.url;
-        const secret = typeof wh === 'object' ? wh.secret : null;
-        const headers = { 'Content-Type': 'application/json' };
-        if (secret) headers['X-Webhook-Secret'] = secret;
-        try {
-          const res = await fetch(url, {
-            method: 'POST', headers,
-            body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(15000),
-          });
-          logger.info({ url, status: res.status, event: payload.event }, 'Webhook sent');
-        } catch (err) { logger.warn({ url, err: err.message }, 'Failed to send webhook'); }
-      })
-    );
-  } catch (e) { logger.error({ err: e }, 'Failed to send to webhooks'); }
-}
 
 function buildAuthPayload() {
   const raw = fs.readFileSync('/app/auth_info/creds.json');
@@ -132,6 +110,18 @@ function unwrapMessage(message) {
   if (message.viewOnceMessageV2?.message) return unwrapMessage(message.viewOnceMessageV2.message);
   if (message.viewOnceMessage?.message)   return unwrapMessage(message.viewOnceMessage.message);
   return message;
+}
+async function notifyOutgoing(messageId, jid, type, data) {
+  if (!messageId) return;
+  await sendToWebhooks({
+    event:     'message',
+    messageId,
+    jid,
+    type,
+    data:      { ...data, fromMe: true, pushName: null },
+    timestamp: Math.floor(Date.now() / 1000),   // ✅ Unix seconds כמו Baileys
+    phoneId:   PHONE_ID,
+  });
 }
 
 function parseMsg(msg) {
@@ -334,14 +324,15 @@ async function connectWA() {
 
       await redisStreams.addMessage(parsed);
     
+      // ✅ אחרי — fromMe נלקח מ-parsed.fromMe שנקבע נכון מה-msg.key.fromMe
       await sendToWebhooks({
         event:     'message',
         messageId: parsed.messageId,
         jid:       parsed.jid,
         type:      parsed.type,
-        data:      { ...parsed.data, fromMe: true, pushName: parsed.pushName, lid: parsed.sender },
-        timestamp: parsed.timestamp,
-        phoneId:   PHONE_ID,  // ← חדש
+        data:      { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
+        timestamp: parsed.timestamp,   // Unix epoch number — נשמר כבר ב-parsed
+        phoneId:   PHONE_ID,
       });
     
       
@@ -380,49 +371,77 @@ app.post('/resend-auth', async (req, res) => {
 
 app.post('/send/text', async (req, res) => {
   try {
-    const r = await sock.sendMessage(normalizeJid(req.body.jid), { text: req.body.text });
-    const messageId = r?.key?.id;
-    if (messageId) {
-      await sendToWebhooks({
-        event: 'message', messageId, jid: normalizeJid(req.body.jid), type: 'text',
-        data: { text: req.body.text, fromMe: true, pushName: null, lid: null },
-        timestamp: Date.now(),
-      });
-    }
-    res.json({ success: true, messageId });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/send/buttons', async (req, res) => {
-  try {
-    const { jid: j, text, footer, buttons } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), {
-      text, footer: footer || '',
-      buttons: buttons.map((b, i) => ({ buttonId: b.id || `btn_${i}`, buttonText: { displayText: b.text }, type: 1 })),
-      headerType: 1,
+    const jid = normalizeJid(req.body.jid);
+    const r   = await sock.sendMessage(jid, { text: req.body.text });
+    await notifyOutgoing(r?.key?.id, jid, 'text', {
+      text: req.body.text,
+      lid:  null,
     });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+app.post('/send/buttons', async (req, res) => {
+  try {
+    const { jid: j, text, footer, buttons } = req.body;
+    const jid = normalizeJid(j);
+    const r   = await sock.sendMessage(jid, {
+      text,
+      footer:     footer || '',
+      buttons:    buttons.map((b, i) => ({
+        buttonId:   b.id || `btn_${i}`,
+        buttonText: { displayText: b.text },
+        type: 1,
+      })),
+      headerType: 1,
+    });
+    await notifyOutgoing(r?.key?.id, jid, 'buttons', {
+      text,
+      footer:  footer || null,
+      buttons: buttons.map((b, i) => ({
+        buttonId: b.id || `btn_${i}`,
+        label:    b.text,
+      })),
+      lid: null,
+    });
+    res.json({ success: true, messageId: r?.key?.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
 app.post('/send/list', async (req, res) => {
   try {
     const { jid: j, text, title, buttonText, footer, sections } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), {
+    const jid = normalizeJid(j);                          // ← שמור ב-variable כי צריך פעמיים
+    const r = await sock.sendMessage(jid, {
       text, title: title || '', footer: footer || '', buttonText: buttonText || 'בחר אפשרות',
       sections: sections.map(s => ({
         title: s.title,
         rows: s.rows.map((row, i) => ({ title: row.title, description: row.description || '', rowId: row.id || `row_${i}` })),
       })),
     });
+    // ← זה כל מה שנוסף:
+    await notifyOutgoing(r?.key?.id, jid, 'list_message', {
+      title, description: text, buttonText: buttonText || 'בחר אפשרות',
+      footer: footer || null, sections, lid: null,
+    });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── /send/button-response ─────────────────────────────────────────────────────
 app.post('/send/button-response', async (req, res) => {
   try {
     const { jid: j, buttonId, displayText } = req.body;
-    const r = await sock.sendMessage(normalizeJid(j), { text: displayText || buttonId });
+    const jid = normalizeJid(j);
+    const r   = await sock.sendMessage(jid, { text: displayText || buttonId });
+    await notifyOutgoing(r?.key?.id, jid, 'button_response', {
+      buttonId,
+      displayText: displayText || null,
+      lid: null,
+    });
     res.json({ success: true, messageId: r?.key?.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -435,10 +454,19 @@ app.post('/send/list-response', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/webhooks/register', async (req, res) => {
-  const { url, secret } = req.body;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  res.json({ success: await redisStreams.registerWebhook(url, secret) });
+// ── /send/list-response ───────────────────────────────────────────────────────
+app.post('/send/list-response', async (req, res) => {
+  try {
+    const { jid: j, rowId, title } = req.body;
+    const jid = normalizeJid(j);
+    const r   = await sock.sendMessage(jid, { text: title || rowId });
+    await notifyOutgoing(r?.key?.id, jid, 'list_response', {
+      rowId,
+      title: title || null,
+      lid:   null,
+    });
+    res.json({ success: true, messageId: r?.key?.id, note: 'Sent as text' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/webhooks/unregister', async (req, res) => {
