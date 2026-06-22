@@ -103,7 +103,7 @@ async def baileys_delete(path: str, data: dict = None) -> dict:
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="WhatsApp Gateway",
-    version="2.1.0",
+    version="2.2.0",
     description="""
 ## 📱 WhatsApp Gateway
 
@@ -112,7 +112,7 @@ app = FastAPI(
 - Baileys פנימי בלבד — מתקשר עם WhatsApp ומנהל webhooks
 
 ### Endpoints:
-- **Connection**: status, QR, logout
+- **Connection**: status, QR, pairing code, logout
 - **Send**: text, buttons, list
 - **Webhooks**: רשום endpoint לקבלת הודעות נכנסות (מנוהל ע"י Baileys)
 - **Messages**: קרא הודעות מה-stream
@@ -160,6 +160,47 @@ async def qrcode_image():
         raise
     except Exception as e:
         raise HTTPException(503, str(e))
+
+# ── Pairing Code (חלופה ל-QR) ─────────────────────────────────────────────────
+@app.get("/pairing-code", tags=["Connection"])
+async def get_pairing_code():
+    """מחזיר את קוד ה-pairing (8 תווים) במקום QR — proxy ל-Baileys"""
+    try:
+        r = await baileys_get("/pairing-code")
+        return {"pairing_code": r.get("pairingCode"), "status": r.get("status")}
+    except httpx.HTTPStatusError:
+        raise HTTPException(404, "Pairing code not available – check /status")
+    except Exception as e:
+        raise HTTPException(503, str(e))
+
+@app.get("/connect-info", tags=["Connection"])
+async def connect_info():
+    """מחזיר QR או pairing code — מה שזמין. נוח ל-UI שלא יודע מראש את המצב."""
+    result = {"status": None, "qr": None, "qr_image_base64": None, "pairing_code": None}
+    try:
+        s = await baileys_get("/status")
+        result["status"] = s.get("status")
+    except Exception:
+        pass
+    # נסה QR
+    try:
+        r = await baileys_get("/qrcode")
+        if r.get("qr"):
+            img = qrcode.make(r["qr"])
+            buf = io.BytesIO()
+            img.save(buf, "PNG")
+            result["qr"] = r.get("qr")
+            result["qr_image_base64"] = base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        pass
+    # נסה pairing code
+    try:
+        p = await baileys_get("/pairing-code")
+        if p.get("pairingCode"):
+            result["pairing_code"] = p.get("pairingCode")
+    except Exception:
+        pass
+    return result
 
 @app.delete("/logout", tags=["Connection"])
 async def logout():
@@ -293,6 +334,7 @@ h1{{font-size:1.4rem;margin-bottom:1.5rem;color:#f8fafc}}
   <div class="lbl">פעולות</div>
   <div class="actions">
     <a class="btn" href="/qrcode/image" target="_blank">סרוק QR</a>
+    <a class="btn" href="/pairing-code" target="_blank">הצג קוד Pairing</a>
     <a class="btn" href="/status" target="_blank">סטטוס</a>
     <a class="btn" href="/webhooks" target="_blank">Webhooks</a>
     <a class="btn" href="/docs" target="_blank">API Docs</a>
@@ -368,7 +410,7 @@ async def get_media(message_id: str):
             return StreamingResponse(
                 io.BytesIO(r.content),
                 media_type=r.headers.get("content-type", "application/octet-stream")
-            )                                                          # ← חסר!
+            )
         except HTTPException:
             raise
         except Exception as e:
