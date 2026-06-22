@@ -7,19 +7,20 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-   downloadMediaMessage,   // ← רק להוסיף כאן
+   downloadMediaMessage, Browsers
 
 } from '@whiskeysockets/baileys';
+
 import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-
-const APP_VERSION = '1.0.0.19';
-
+const APP_VERSION = '1.0.0.20';
+let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
-
-
+const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
+let pairingRequested = false;  // מונע בקשות כפולות
+const PHONE_NUMBER = process.env.PHONE_NUMBER || null;
 
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -283,11 +284,14 @@ async function connectWA() {
 
   // sock = makeWASocket({ version,   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger,  browser: ['ScenarioBot', 'Chrome', APP_VERSION],});
 
-    sock = makeWASocket({
+  sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
-    browser: [user_display, 'Chrome', APP_VERSION],
+    browser: USE_PAIRING_CODE
+      ? Browsers.macOS('Chrome')                       // pairing code דורש פורמט תקין
+      : [user_display, 'Chrome', APP_VERSION],         // QR — נשאר עם הזיהוי המותאם
+    printQRInTerminal: false,
   });
 
   sock.ev.on('creds.update', async () => {
@@ -300,23 +304,50 @@ async function connectWA() {
     logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
   });
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      qrCodeData = qr; status = 'qr_ready';
-      logger.info('QR ready');
-      await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString() , phoneId: PHONE_ID });
+      if (USE_PAIRING_CODE && !sock.authState.creds.registered && !pairingRequested && PHONE_NUMBER) {
+        pairingRequested = true;
+        try {
+          const phoneNumber = PHONE_NUMBER.replace(/\D/g, '');
+          const code = await sock.requestPairingCode(phoneNumber);
+          pairingCodeData = code;
+          status = 'pairing_ready';
+          logger.info({ code }, 'Pairing code ready');
+          await sendToWebhooks({
+            event: 'pairing_code',
+            pairingCode: code,
+            timestamp: new Date().toISOString(),
+            phoneId: PHONE_ID,
+          });
+        } catch (e) {
+          pairingRequested = false;
+          logger.warn({ err: e.message }, 'Pairing code failed, falling back to QR');
+          qrCodeData = qr; status = 'qr_ready';
+          await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString(), phoneId: PHONE_ID });
+        }
+      } else {
+        qrCodeData = qr;
+        status = 'qr_ready';
+        logger.info('QR ready');
+        await sendToWebhooks({ event: 'qr', timestamp: new Date().toISOString(), phoneId: PHONE_ID });
+      }
     }
+
     if (connection === 'open') {
-      qrCodeData = null; status = 'connected';
+      qrCodeData = null;
+      pairingCodeData = null;
+      status = 'connected';
       logger.info('WhatsApp connected');
       try { await sendToWebhooks(buildAuthPayload()); } catch (e) { logger.error({ err: e }, 'Failed to send creds'); }
     }
+
     if (connection === 'close') {
       status = 'disconnected';
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
-      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString() , phoneId: PHONE_ID });
+      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString(), phoneId: PHONE_ID });
       if (retry) setTimeout(connectWA, 3000);
     }
   });
@@ -399,6 +430,11 @@ app.get('/version', (_, res) => res.json({ version: APP_VERSION }));
 app.get('/qrcode', (_, res) => {
   if (!qrCodeData) return res.status(404).json({ error: 'QR not available', status });
   res.json({ qr: qrCodeData, status });
+});
+
+app.get('/pairing-code', (_, res) => {        // ← כאן
+  if (!pairingCodeData) return res.status(404).json({ error: 'Pairing code not available', status });
+  res.json({ pairingCode: pairingCodeData, status });
 });
 
 app.post('/resend-auth', async (req, res) => {
