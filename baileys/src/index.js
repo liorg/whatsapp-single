@@ -578,6 +578,42 @@ app.get('/debug/contacts-count', async (req, res) => {
   const all = await loadContacts();
   res.json({ count: Object.keys(all).length });
 });
+app.post('/pairing-code/refresh', async (req, res) => {
+    try {
+        if (!sock || !PHONE_NUMBER) {
+            return res.status(400).json({ error: 'socket not ready' });
+        }
+
+        // ← כאן, מיד אחרי בדיקת ה-socket
+        if (sock.authState.creds.registered) {
+            return res.status(400).json({ error: 'already registered', status: 'connected' });
+        }
+
+        // אפס את ה-guard וה-state
+        pairingRequested = false;
+        pairingCodeData  = null;
+
+        const cleanNumber = PHONE_NUMBER.replace(/\D/g, '');
+        const code = await sock.requestPairingCode(cleanNumber);
+        pairingCodeData  = code;
+        pairingRequested = true;
+        status = 'pairing_ready';
+
+        logger.info({ code }, '[PAIRING] Refreshed code');
+
+        await sendToWebhooks({
+            event: 'pairing_code',
+            pairingCode: code,
+            timestamp: new Date().toISOString(),
+            phoneId: PHONE_ID,
+        });
+
+        res.json({ pairingCode: code, status: 'pairing_ready' });
+    } catch (err) {
+        logger.warn({ err: err.message }, '[PAIRING] Refresh failed');
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.delete('/logout', async (_, res) => {
   try { await sock.logout(); res.json({ success: true }); }
