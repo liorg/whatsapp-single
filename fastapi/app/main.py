@@ -9,8 +9,9 @@ import httpx
 import qrcode
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
+
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -415,3 +416,23 @@ async def get_media(message_id: str):
             raise
         except Exception as e:
             raise HTTPException(503, f"Manager unavailable: {e}")
+            
+@app.post("/pairing-code/refresh", tags=["Connection"])
+async def pairing_code_refresh():
+    """מעביר בקשת refresh ל-Baileys ומחזיר קוד חדש"""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(f"{BAILEYS_URL}/pairing-code/refresh")
+            data = resp.json()
+            # המר ל-snake_case לעקביות עם /pairing-code
+            return JSONResponse(
+                status_code=resp.status_code,
+                content={
+                    "pairing_code": data.get("pairingCode"),
+                    "status": data.get("status"),
+                    "error": data.get("error"),
+                },
+            )
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"error": str(e)})
+        
