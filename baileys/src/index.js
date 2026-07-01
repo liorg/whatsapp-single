@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.26';
+const APP_VERSION = '1.0.0.27';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -33,30 +33,32 @@ process.stdout.write = (chunk, ...a) => isNoise(chunk) ? true : _stdout(chunk, .
 process.stderr.write = (chunk, ...a) => isNoise(chunk) ? true : _stderr(chunk, ...a);
 
 const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
+  level: 'trace',   // ← הורדנו את הרף כדי לתפוס הכל
   transport: { target: 'pino-pretty', options: { colorize: true } },
   hooks: {
     logMethod(args, method, level) {
-      const msg = typeof args[0] === 'string' ? args[0] : args[1];
-      const obj = typeof args[0] === 'object' ? args[0] : null;
+      // level: 10=trace,20=debug,30=info,40=warn,50=error,60=fatal
+      if (level >= 40) {
+        const msg = typeof args[0] === 'string' ? args[0] : args[1];
+        const obj = typeof args[0] === 'object' ? args[0] : null;
 
-      if (typeof msg === 'string' && msg.includes('463')) {   // ← הרחבתי ל-'463' כדי לתפוס גם אם הטקסט המדויק שונה
-        console.error('[HOOK-DEBUG] matched 463:', msg, obj);
+        console.error('[HOOK-FIRED]', level, msg);   // ← דיבוג זמני, לוודא שהוא בכלל רץ
+
+        // תיעוד גורף — כל warn/error, לא רק 463
         sendToWebhooks({
-          event:        'send_error',
-          messageId:    obj?.msgId || null,
-          jid:          obj?.from || null,
-          errorCode:    '463',
+          event:        'log_event',
+          messageId:    obj?.attrs?.id   || obj?.msgId || obj?.id   || null,
+          jid:          obj?.attrs?.from || obj?.from   || obj?.jid  || null,
+          errorCode:    obj?.attrs?.error || null,
           errorMessage: msg,
+          level,
           timestamp:    new Date().toISOString(),
           phoneId:      PHONE_ID,
-        }).then(() => console.error('[HOOK-DEBUG] webhook sent OK'))
-          .catch(e => console.error('[HOOK-DEBUG] webhook FAILED', e.message));
+        }).catch(e => console.error('[HOOK-DEBUG] webhook FAILED', e.message));
       }
-
       return method.apply(this, args);
     }
-}
+  }
 });
 
 
