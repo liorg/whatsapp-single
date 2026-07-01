@@ -364,6 +364,21 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     logger.info({ count: updates.length }, 'Contacts updated');
   });
 
+   sock.ev.on('messages.update', async (updates) => {
+    for (const { key, update } of updates) {
+      if (!key?.id) continue;
+      logger.warn({ id: key.id, status: update.status, jid: key.remoteJid }, '[STATUS] Message update');
+      await sendToWebhooks({
+        event:     'message_status',
+        messageId: key.id,
+        jid:       key.remoteJid,
+        status:    update.status,
+        timestamp: new Date().toISOString(),
+        phoneId:   PHONE_ID,
+      });
+    }
+  });
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const seen = new Set();
@@ -449,6 +464,7 @@ app.post('/resend-auth', async (req, res) => {
 
 app.post('/send/text', async (req, res) => {
   try {
+    logger.warn({ readyState: sock?.ws?.readyState, wsUser: sock?.user?.id }, '[DEBUG] Pre-send socket state');
     const jid = normalizeJid(req.body.jid);
     const r   = await sock.sendMessage(jid, { text: req.body.text });
     await notifyOutgoing(r?.key?.id, jid, 'text', {
