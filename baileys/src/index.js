@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.23';
+const APP_VERSION = '1.0.0.24';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -37,7 +37,25 @@ const logger = pino({
   transport: { target: 'pino-pretty', options: { colorize: true } }
 });
 
+// ← יירוט warn כדי לתפוס שגיאות 463 (reachout timelock) ולשלוח webhook
+const originalWarn = logger.warn.bind(logger);
+logger.warn = (obj, msg, ...args) => {
+  originalWarn(obj, msg, ...args);
+  if (typeof msg === 'string' && msg.includes('account restricted or missing tctoken')) {
+    sendToWebhooks({
+      event:        'send_error',
+      messageId:    obj?.msgId || null,
+      jid:          obj?.from || null,
+      errorCode:    '463',
+      errorMessage: msg,
+      timestamp:    new Date().toISOString(),
+      phoneId:      PHONE_ID,
+    }).catch(e => originalWarn({ err: e.message }, '[WEBHOOK] Failed to send send_error'));
+  }
+};
+
 const redisStreams = new RedisStreams();
+
 const CONTACTS_FILE = '/app/data/contacts.json';
 
 const MEDIA_BASE = '/app/data/media';
