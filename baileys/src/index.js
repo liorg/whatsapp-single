@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.21';
+const APP_VERSION = '1.0.0.23';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
