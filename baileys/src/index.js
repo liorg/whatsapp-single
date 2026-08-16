@@ -661,7 +661,78 @@ app.delete('/logout', async (_, res) => {
   try { await sock.logout(); res.json({ success: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+// ── /send/image ───────────────────────────────────────────────────────────────
+app.post('/send/image', async (req, res) => {
+  try {
+    const jid = normalizeJid(req.body.jid);
+    const { image, caption, mimetype } = req.body;
 
+    let mediaInput;
+    if (typeof image === 'string' && image.startsWith('http')) {
+      mediaInput = { url: image };
+    } else if (typeof image === 'string' && fs.existsSync(image)) {
+      mediaInput = fs.readFileSync(image);
+    } else if (typeof image === 'string') {
+      // נסה base64
+      try {
+        mediaInput = Buffer.from(image, 'base64');
+      } catch {
+        return res.status(400).json({ error: 'Invalid image: must be URL, file path, or base64 string' });
+      }
+    } else {
+      return res.status(400).json({ error: 'image field is required' });
+    }
+
+    const r = await sock.sendMessage(jid, {
+      image: mediaInput,
+      caption: caption || '',
+      mimetype: mimetype || 'image/jpeg',
+    });
+
+    await notifyOutgoing(r?.key?.id, jid, 'image', {
+      caption: caption || null,
+      mimetype: mimetype || 'image/jpeg',
+      lid: null,
+    });
+
+    res.json({ success: true, messageId: r?.key?.id });
+  } catch (e) {
+    logger.error({ err: e.message }, 'Failed to send image');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── /send/sticker ─────────────────────────────────────────────────────────────
+app.post('/send/sticker', async (req, res) => {
+  try {
+    const jid = normalizeJid(req.body.jid);
+    const { sticker } = req.body;
+
+    let mediaInput;
+    if (typeof sticker === 'string' && sticker.startsWith('http')) {
+      mediaInput = { url: sticker };
+    } else if (typeof sticker === 'string' && fs.existsSync(sticker)) {
+      mediaInput = fs.readFileSync(sticker);
+    } else if (typeof sticker === 'string') {
+      try {
+        mediaInput = Buffer.from(sticker, 'base64');
+      } catch {
+        return res.status(400).json({ error: 'Invalid sticker: must be URL, file path, or base64 string' });
+      }
+    } else {
+      return res.status(400).json({ error: 'sticker field is required' });
+    }
+
+    const r = await sock.sendMessage(jid, { sticker: mediaInput });
+
+    await notifyOutgoing(r?.key?.id, jid, 'sticker', { lid: null });
+
+    res.json({ success: true, messageId: r?.key?.id });
+  } catch (e) {
+    logger.error({ err: e.message }, 'Failed to send sticker');
+    res.status(500).json({ error: e.message });
+  }
+});
 app.listen(PORT, () => {
   logger.info(`Baileys service on :${PORT}`);
   connectWA();
