@@ -82,6 +82,16 @@ class ListResponse(BaseModel):
     rowId: str
     title: Optional[str] = None
 
+class ImageMsg(BaseModel):
+    jid: str
+    image: str          # URL, local path, or base64 string
+    caption: Optional[str] = None
+    mimetype: Optional[str] = "image/jpeg"
+
+class StickerMsg(BaseModel):
+    jid: str
+    sticker: str        # URL, local path, or base64 string
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 async def baileys_post(path: str, data: dict) -> dict:
     async with httpx.AsyncClient(timeout=30) as c:
@@ -227,7 +237,15 @@ async def send_button_response(b: ButtonResponse):
 @app.post("/send/list-response", tags=["Send"])
 async def send_list_response(b: ListResponse):
     return await baileys_post("/send/list-response", b.model_dump())
+    
+@app.post("/send/image", tags=["Send"])
+async def send_image(b: ImageMsg):
+    return await baileys_post("/send/image", b.model_dump())
 
+@app.post("/send/sticker", tags=["Send"])
+async def send_sticker(b: StickerMsg):
+    return await baileys_post("/send/sticker", b.model_dump())
+    
 # ── Webhooks — מנוהל ע"י Baileys ישירות ─────────────────────────────────────
 @app.post("/webhooks/register", tags=["Webhooks"])
 async def register_webhook(b: WebhookRegister):
