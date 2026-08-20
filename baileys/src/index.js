@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.32';
+const APP_VERSION = '1.0.0.34';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -68,12 +68,12 @@ const CONTACTS_FILE = '/app/data/contacts.json';
 
 const MEDIA_BASE = '/app/data/media';
 
-async function saveMedia(msg, messageId, mimeType) {
+async function saveMedia(msg, messageId, mimeType, s = sock) {
   try {
-    logger.warn({ messageId, mimeType, sockExists: !!sock }, '[MEDIA] saveMedia start');
+    logger.warn({ messageId, mimeType, sockExists: !!s }, '[MEDIA] saveMedia start');
     fs.mkdirSync(MEDIA_BASE, { recursive: true });
     const buffer = await downloadMediaMessage(msg, 'buffer', {},
-      { logger, reuploadRequest: sock.updateMediaMessage });
+      { logger, reuploadRequest: s.updateMediaMessage });
     logger.warn({ size: buffer.length }, '[MEDIA] buffer downloaded');
     const ext      = (mimeType || 'image/jpeg').split('/')[1].split(';')[0];
     const filePath = `${MEDIA_BASE}/${messageId}.${ext}`;
@@ -133,16 +133,16 @@ async function sendToWebhooks(payload) {
 }
 
 
-function buildAuthPayload() {
+function buildAuthPayload(s = sock) {
   const raw = fs.readFileSync('/app/auth_info/creds.json');
   const creds_b64 = raw.toString('base64');
-  const jid = sock.user?.id || '';
+  const jid = s?.user?.id || '';
   const phone = jid.split('@')[0].split(':')[0];
   return { 
     event: 'authenticated', 
     phone, 
     jid, 
-    name:          sock.user?.name || null, 
+    name:          s?.user?.name || null, 
     timestamp:     new Date().toISOString(), 
     creds_b64,
     authRevision:  parseInt(process.env.AUTH_REVISION || '0'),  
@@ -159,6 +159,7 @@ let status = 'disconnected';
 // ── ניהול מחזור חיי socket ──────────────────────────────────────────────────
 let connectGen   = 0;      // מזהה הדור הנוכחי; רק הדור האחרון פעיל
 let reconnecting = false;  // מונע שרשראות reconnect מקבילות
+let connecting   = false;  // connectWA בריצה כרגע — מונע כניסה מקבילה
 
 // ── dedup חוצה-batch: נדרש כי הפעלנו type==='append' ────────────────────────
 const deliveredIds = new Set();
@@ -321,8 +322,14 @@ else if (c?.videoMessage) {
 }
 
 async function connectWA() {
+  if (connecting) {
+    logger.warn({ connectGen }, '[SOCK] connectWA already in flight — skipped');
+    return;
+  }
+  connecting = true;
   const myGen = ++connectGen;
 
+  try {
   // ── סגירת ה-socket הקודם לפני יצירת חדש ──────────────────────────────────
   if (sock) {
     const old = sock;
@@ -338,7 +345,7 @@ async function connectWA() {
 
   // sock = makeWASocket({ version,   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger,  browser: ['ScenarioBot', 'Chrome', APP_VERSION],});
 
-  sock = makeWASocket({
+  const currentSock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
@@ -348,30 +355,34 @@ async function connectWA() {
     printQRInTerminal: false,
   });
 
+  // הגלובלי משמש רק את ה-endpoints (/send/*) — ה-handlers עובדים עם currentSock
+  sock = currentSock;
+
   logger.warn({ myGen }, '[SOCK] new socket created');
 
-  sock.ev.on('creds.update', async () => {
+  currentSock.ev.on('creds.update', async () => {
     if (myGen !== connectGen) return;   // דור ישן — התעלם
     await saveCreds();
     await new Promise(resolve => setTimeout(resolve, 500));
+    if (myGen !== connectGen) return;   // נבדק שוב אחרי ה-await
     if (!fs.existsSync('/app/auth_info/creds.json')) return;
-    if (!sock?.user?.id) return;
-    const payload = buildAuthPayload();
+    if (!currentSock.user?.id) return;
+    const payload = buildAuthPayload(currentSock);
     await sendToWebhooks(payload);
     logger.info({ phone: payload.phone }, 'Creds updated — sent to webhooks');
   });
 
-sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (myGen !== connectGen) {
       logger.warn({ myGen, connectGen, connection }, '[SOCK] stale connection.update ignored');
       return;
     }
     if (qr) {
-      if (USE_PAIRING_CODE && !sock.authState.creds.registered && !pairingRequested && PHONE_NUMBER) {
+      if (USE_PAIRING_CODE && !currentSock.authState.creds.registered && !pairingRequested && PHONE_NUMBER) {
         pairingRequested = true;
         try {
           const phoneNumber = PHONE_NUMBER.replace(/\D/g, '');
-          const code = await sock.requestPairingCode(phoneNumber);
+          const code = await currentSock.requestPairingCode(phoneNumber);
           pairingCodeData = code;
           status = 'pairing_ready';
           logger.info({ code }, 'Pairing code ready');
@@ -400,31 +411,35 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       pairingCodeData = null;
       status = 'connected';
       logger.info('WhatsApp connected');
-      try { await sendToWebhooks(buildAuthPayload()); } catch (e) { logger.error({ err: e }, 'Failed to send creds'); }
+      try { await sendToWebhooks(buildAuthPayload(currentSock)); } catch (e) { logger.error({ err: e }, 'Failed to send creds'); }
     }
 
     if (connection === 'close') {
       status = 'disconnected';
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
-      logger.warn({ code, retry }, 'Connection closed');
-      await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString(), phoneId: PHONE_ID });
+      logger.warn({ code, retry, myGen }, 'Connection closed');
 
-      // ── reconnect יחיד בלבד ────────────────────────────────────────────────
+      // ── reconnect קודם — לא תלוי ב-Redis/webhook ─────────────────────────
       if (retry && !reconnecting) {
         reconnecting = true;
         logger.warn({ myGen, code }, '[SOCK] scheduling reconnect');
         setTimeout(() => {
-          reconnecting = false;
-          connectWA().catch(e => logger.warn({ err: e.message }, '[SOCK] reconnect failed'));
+          connectWA()
+            .catch(e => logger.warn({ err: e.message }, '[SOCK] reconnect failed'))
+            .finally(() => { reconnecting = false; });
         }, 3000);
       } else if (retry) {
         logger.warn({ myGen }, '[SOCK] reconnect already pending — skipped');
       }
+
+      // ── webhook לא רשאי לחסום את ה-reconnect ─────────────────────────────
+      sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString(), phoneId: PHONE_ID })
+        .catch(e => logger.warn({ err: e.message }, '[SOCK] disconnected webhook failed'));
     }
   });
 
-  sock.ev.on('contacts.update', async (updates) => {
+  currentSock.ev.on('contacts.update', async (updates) => {
     if (myGen !== connectGen) return;
     for (const contact of updates) {
       if (contact.id) {
@@ -437,7 +452,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     logger.info({ count: updates.length }, 'Contacts updated');
   });
 
-   sock.ev.on('messages.update', async (updates) => {
+   currentSock.ev.on('messages.update', async (updates) => {
     if (myGen !== connectGen) return;
     for (const { key, update } of updates) {
       if (!key?.id) continue;
@@ -453,7 +468,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  currentSock.ev.on('messages.upsert', async ({ messages, type }) => {
     // ── DIAG: לפני כל סינון ──────────────────────────────────────────────
     logger.warn({
       myGen, connectGen, stale: myGen !== connectGen,
@@ -506,7 +521,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
 
       // ✅ הוסף כאן — הורדה async בתוך async context
       if (parsed.type === 'image' || parsed.type === 'audio') {
-        const mediaPath = await saveMedia(msg, parsed.messageId, parsed.data.mimeType);
+        const mediaPath = await saveMedia(msg, parsed.messageId, parsed.data.mimeType, currentSock);
         parsed.data.mediaPath = mediaPath;
         parsed.data.mediaUrl  = mediaPath ? `/media/${parsed.messageId}` : null;
       }
@@ -544,6 +559,10 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
    //   });
     }
   });
+
+  } finally {
+    connecting = false;
+  }
 }
 
 const app  = express();
@@ -822,5 +841,16 @@ app.post('/send/sticker', async (req, res) => {
 });
 app.listen(PORT, () => {
   logger.info(`Baileys service on :${PORT}`);
-  connectWA();
+  connectWA().catch(e => logger.warn({ err: e.message }, '[SOCK] initial connect failed'));
+
+  // ── watchdog: אם אין socket ואין reconnect מתוזמן — מכריח ניסיון ─────────
+  setInterval(() => {
+    if (!sock && !reconnecting && !connecting) {
+      logger.warn({ connectGen }, '[SOCK] watchdog — no socket, forcing reconnect');
+      reconnecting = true;
+      connectWA()
+        .catch(e => logger.warn({ err: e.message }, '[SOCK] watchdog reconnect failed'))
+        .finally(() => { reconnecting = false; });
+    }
+  }, 30000);
 });
