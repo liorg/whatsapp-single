@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.28';
+const APP_VERSION = '1.0.0.31';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -155,6 +155,10 @@ function buildAuthPayload() {
 let sock = null;
 let qrCodeData = null;
 let status = 'disconnected';
+/ ── ניהול מחזור חיי socket ──────────────────────────────────────────────────
+let connectGen   = 0;      // מזהה הדור הנוכחי; רק הדור האחרון פעיל
+let reconnecting = false;  // מונע שרשראות reconnect מקבילות
+
 
 function unwrapMessage(message) {
   if (!message) return null;
@@ -308,8 +312,13 @@ async function connectWA() {
   const { state, saveCreds } = await useMultiFileAuthState('/app/auth_info');
   const { version }          = await fetchLatestBaileysVersion();
 
-  // sock = makeWASocket({ version,   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger,  browser: ['ScenarioBot', 'Chrome', APP_VERSION],});
-
+  const myGen = ++connectGen;
+  if (sock) {
+    const old = sock; sock = null;
+    try { old.ev.removeAllListeners(); } catch {}
+    try { old.end(undefined); } catch {}
+    logger.warn({ myGen }, '[SOCK] previous socket closed');
+  }
   sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
@@ -321,6 +330,11 @@ async function connectWA() {
   });
 
   sock.ev.on('creds.update', async () => {
+    //       // דור ישן — התעלם
+    if (myGen !== connectGen) {
+        logger.info('[creds.update] OLD VERSION IGNORE');
+      return;
+    }
     await saveCreds();
     await new Promise(resolve => setTimeout(resolve, 500));
     if (!fs.existsSync('/app/auth_info/creds.json')) return;
@@ -374,11 +388,28 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
       await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString(), phoneId: PHONE_ID });
-      if (retry) setTimeout(connectWA, 3000);
+ 
+      // ── reconnect יחיד בלבד ────────────────────────────────────────────────
+      if (retry && !reconnecting) {
+        reconnecting = true;
+        logger.warn({ myGen, code }, '[SOCK] scheduling reconnect');
+        setTimeout(() => {
+          reconnecting = false;
+          connectWA().catch(e => logger.warn({ err: e.message }, '[SOCK] reconnect failed'));
+        }, 3000);
+      } else if (retry) {
+        logger.warn({ myGen }, '[SOCK] reconnect already pending — skipped');
+      }
     }
+  
   });
 
   sock.ev.on('contacts.update', async (updates) => {
+     //       // דור ישן — התעלם
+    if (myGen !== connectGen) {
+        logger.info('[contacts.update] OLD VERSION IGNORE');
+      return;
+    }
     for (const contact of updates) {
       if (contact.id) {
         await saveContact(contact.id, {
@@ -391,6 +422,11 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   });
 
    sock.ev.on('messages.update', async (updates) => {
+      //       // דור ישן — התעלם
+    if (myGen !== connectGen) {
+        logger.info('[messages.update] OLD VERSION IGNORE');
+      return;
+    }
     for (const { key, update } of updates) {
       if (!key?.id) continue;
       logger.warn({ id: key.id, status: update.status, jid: key.remoteJid }, '[STATUS] Message update');
@@ -406,7 +442,26 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+   logger.warn({
+      myGen, connectGen, stale: myGen !== connectGen,
+      type,
+      count: messages.length,
+      ids:   messages.map(m => m.key?.id),
+      jids:  messages.map(m => m.key?.remoteJid),
+      fromMe: messages.map(m => m.key?.fromMe),
+      hasMsg: messages.map(m => !!m.message),
+      topKeys: messages.map(m => m.message ? Object.keys(m.message)[0] : null),
+    }, '[UPSERT] fired');
+ 
+    // דור ישן — מלוגגים אבל ממשיכים לטפל, כדי לא לאבד הודעה בזמן מעבר
+    if (myGen !== connectGen) {
+      logger.warn({ myGen, connectGen }, '[UPSERT] STALE GENERATION — socket ישן עדיין מקבל');
+    }
+    if (type !== 'notify' && type !== 'append') {
+      logger.warn({ type }, '[UPSERT] dropped — unhandled type');
+      return;
+    }
+    
     const seen = new Set();
     for (const msg of messages) {
       if (!msg.message) continue;
