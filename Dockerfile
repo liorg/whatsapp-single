@@ -7,6 +7,14 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     libvips-dev \
+    # ── Network diagnostics ──────────────────────────────────────────────────
+    iproute2 \
+    tcpdump \
+    procps \
+    lsof \
+    net-tools \
+    dnsutils \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python venv ───────────────────────────────────────────────────────────────
