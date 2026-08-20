@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.31';
+const APP_VERSION = '1.0.0.32';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -155,10 +155,22 @@ function buildAuthPayload() {
 let sock = null;
 let qrCodeData = null;
 let status = 'disconnected';
-/ ── ניהול מחזור חיי socket ──────────────────────────────────────────────────
+
+// ── ניהול מחזור חיי socket ──────────────────────────────────────────────────
 let connectGen   = 0;      // מזהה הדור הנוכחי; רק הדור האחרון פעיל
 let reconnecting = false;  // מונע שרשראות reconnect מקבילות
 
+// ── dedup חוצה-batch: נדרש כי הפעלנו type==='append' ────────────────────────
+const deliveredIds = new Set();
+function rememberDelivered(id) {
+  if (!id) return;
+  deliveredIds.add(id);
+  if (deliveredIds.size > 2000) {
+    // גיזום FIFO — Set שומר סדר הכנסה
+    const it = deliveredIds.values();
+    for (let i = 0; i < 500; i++) deliveredIds.delete(it.next().value);
+  }
+}
 
 function unwrapMessage(message) {
   if (!message) return null;
@@ -309,16 +321,23 @@ else if (c?.videoMessage) {
 }
 
 async function connectWA() {
+  const myGen = ++connectGen;
+
+  // ── סגירת ה-socket הקודם לפני יצירת חדש ──────────────────────────────────
+  if (sock) {
+    const old = sock;
+    sock = null;
+    try { old.ev.removeAllListeners(); } catch (e) { logger.warn({ err: e.message }, '[SOCK] removeAllListeners failed'); }
+    try { old.end(undefined); }         catch (e) { logger.warn({ err: e.message }, '[SOCK] end failed'); }
+    try { old.ws?.close?.(); }          catch {}
+    logger.warn({ myGen }, '[SOCK] previous socket closed');
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState('/app/auth_info');
   const { version }          = await fetchLatestBaileysVersion();
 
-  const myGen = ++connectGen;
-  if (sock) {
-    const old = sock; sock = null;
-    try { old.ev.removeAllListeners(); } catch {}
-    try { old.end(undefined); } catch {}
-    logger.warn({ myGen }, '[SOCK] previous socket closed');
-  }
+  // sock = makeWASocket({ version,   auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger,  browser: ['ScenarioBot', 'Chrome', APP_VERSION],});
+
   sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
@@ -329,12 +348,10 @@ async function connectWA() {
     printQRInTerminal: false,
   });
 
+  logger.warn({ myGen }, '[SOCK] new socket created');
+
   sock.ev.on('creds.update', async () => {
-    //       // דור ישן — התעלם
-    if (myGen !== connectGen) {
-        logger.info('[creds.update] OLD VERSION IGNORE');
-      return;
-    }
+    if (myGen !== connectGen) return;   // דור ישן — התעלם
     await saveCreds();
     await new Promise(resolve => setTimeout(resolve, 500));
     if (!fs.existsSync('/app/auth_info/creds.json')) return;
@@ -345,6 +362,10 @@ async function connectWA() {
   });
 
 sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (myGen !== connectGen) {
+      logger.warn({ myGen, connectGen, connection }, '[SOCK] stale connection.update ignored');
+      return;
+    }
     if (qr) {
       if (USE_PAIRING_CODE && !sock.authState.creds.registered && !pairingRequested && PHONE_NUMBER) {
         pairingRequested = true;
@@ -388,7 +409,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry }, 'Connection closed');
       await sendToWebhooks({ event: 'disconnected', code, retry, timestamp: new Date().toISOString(), phoneId: PHONE_ID });
- 
+
       // ── reconnect יחיד בלבד ────────────────────────────────────────────────
       if (retry && !reconnecting) {
         reconnecting = true;
@@ -401,15 +422,10 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
         logger.warn({ myGen }, '[SOCK] reconnect already pending — skipped');
       }
     }
-  
   });
 
   sock.ev.on('contacts.update', async (updates) => {
-     //       // דור ישן — התעלם
-    if (myGen !== connectGen) {
-        logger.info('[contacts.update] OLD VERSION IGNORE');
-      return;
-    }
+    if (myGen !== connectGen) return;
     for (const contact of updates) {
       if (contact.id) {
         await saveContact(contact.id, {
@@ -422,11 +438,7 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   });
 
    sock.ev.on('messages.update', async (updates) => {
-      //       // דור ישן — התעלם
-    if (myGen !== connectGen) {
-        logger.info('[messages.update] OLD VERSION IGNORE');
-      return;
-    }
+    if (myGen !== connectGen) return;
     for (const { key, update } of updates) {
       if (!key?.id) continue;
       logger.warn({ id: key.id, status: update.status, jid: key.remoteJid }, '[STATUS] Message update');
@@ -442,7 +454,8 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-   logger.warn({
+    // ── DIAG: לפני כל סינון ──────────────────────────────────────────────
+    logger.warn({
       myGen, connectGen, stale: myGen !== connectGen,
       type,
       count: messages.length,
@@ -452,24 +465,32 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       hasMsg: messages.map(m => !!m.message),
       topKeys: messages.map(m => m.message ? Object.keys(m.message)[0] : null),
     }, '[UPSERT] fired');
- 
+
     // דור ישן — מלוגגים אבל ממשיכים לטפל, כדי לא לאבד הודעה בזמן מעבר
     if (myGen !== connectGen) {
       logger.warn({ myGen, connectGen }, '[UPSERT] STALE GENERATION — socket ישן עדיין מקבל');
     }
+
     if (type !== 'notify' && type !== 'append') {
       logger.warn({ type }, '[UPSERT] dropped — unhandled type');
       return;
     }
-    
+
     const seen = new Set();
     for (const msg of messages) {
-      if (!msg.message) continue;
+      if (!msg.message) { logger.warn({ id: msg.key?.id }, '[UPSERT] skip — no message body'); continue; }
       const msgId = msg.key.id;
       if (seen.has(msgId)) continue;
       seen.add(msgId);
-      if (msg.message?.senderKeyDistributionMessage && !msg.message?.conversation && !msg.message?.extendedTextMessage) continue;
-      if (msg.message?.protocolMessage) continue;
+      if (deliveredIds.has(msgId)) { logger.warn({ id: msgId }, '[UPSERT] skip — already delivered'); continue; }
+      if (msg.message?.senderKeyDistributionMessage && !msg.message?.conversation && !msg.message?.extendedTextMessage) {
+        logger.warn({ id: msgId }, '[UPSERT] skip — senderKeyDistribution');
+        continue;
+      }
+      if (msg.message?.protocolMessage) {
+        logger.warn({ id: msgId }, '[UPSERT] skip — protocolMessage');
+        continue;
+      }
 
       if (!msg.key.fromMe) {
         const sender = msg.key.participant || msg.key.remoteJid;
@@ -491,18 +512,29 @@ sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       }
 
 
-      await redisStreams.addMessage(parsed);
-    
-      // ✅ אחרי — fromMe נלקח מ-parsed.fromMe שנקבע נכון מה-msg.key.fromMe
-      await sendToWebhooks({
-        event:     'message',
-        messageId: parsed.messageId,
-        jid:       parsed.jid,
-        type:      parsed.type,
-        data:      { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
-        timestamp: parsed.timestamp,   // Unix epoch number — נשמר כבר ב-parsed
-        phoneId:   PHONE_ID,
-      });
+      // ── DIAG: כשל ב-Redis/webhook לא ישבור את הלולאה ולא ייעלם בשקט ──────
+      try {
+        await redisStreams.addMessage(parsed);
+        logger.warn({ id: parsed.messageId }, '[UPSERT] addMessage ok');
+      } catch (e) {
+        logger.warn({ id: parsed.messageId, err: e.message }, '[UPSERT] addMessage FAILED');
+      }
+
+      try {
+        await sendToWebhooks({
+          event:     'message',
+          messageId: parsed.messageId,
+          jid:       parsed.jid,
+          type:      parsed.type,
+          data:      { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
+          timestamp: parsed.timestamp,   // Unix epoch number — נשמר כבר ב-parsed
+          phoneId:   PHONE_ID,
+        });
+        rememberDelivered(parsed.messageId);
+        logger.warn({ id: parsed.messageId, jid: parsed.jid, type: parsed.type }, '[UPSERT] webhook ok');
+      } catch (e) {
+        logger.warn({ id: parsed.messageId, err: e.message }, '[UPSERT] webhook FAILED');
+      }
     
       
      // await sendToWebhooks({
