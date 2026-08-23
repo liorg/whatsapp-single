@@ -311,3 +311,92 @@ Network
 הוא לא יכול לקרוא את **WhatsApp protocol ACK**, מכיוון שהוא נמצא בתוך התעבורה המוצפנת של TLS/WSS.
 
 כדי לבדוק WhatsApp ACK צריך instrumentation/logging בתוך Baileys, למשל סביב `sendMessageAck()`.
+
+
+
+כן. הכי ברור להציג את זה כ־**שתי טבלאות נפרדות**, לפי ה־traces האמיתיים שהבאת.
+
+## 📥 הודעה נכנסת — WhatsApp → Baileys
+
+מה־trace שלך סביב `15:28:56`:
+
+| # | כיוון                      | Flags  | SEQ       |     ACK |    WIN |  Length | משמעות                                    |
+| - | -------------------------- | ------ | --------- | ------: | -----: | ------: | ----------------------------------------- |
+| 1 | **IN** WhatsApp → Baileys  | `[P.]` | `136:559` |     `1` | `2024` | **423** | WhatsApp שולח payload                     |
+| 2 | **OUT** Baileys → WhatsApp | `[.]`  | —         | **559** |  `501` |   **0** | TCP ACK: קיבלתי עד 558                    |
+| 3 | **OUT** Baileys → WhatsApp | `[P.]` | `1:83`    |   `559` |  `501` |  **82** | Baileys שולח payload + מאשר את ה־incoming |
+| 4 | **IN** WhatsApp → Baileys  | `[.]`  | —         |  **83** | `2024` |   **0** | WhatsApp מאשר את 82 ה־bytes               |
+
+כלומר:
+
+```text id="4s8fuc"
+WhatsApp                              Baileys
+
+423 bytes ───────────────────────────►
+SEQ 136:559
+
+          ◄────────────────────────── ACK 559
+
+          ◄────────────────────────── 82 bytes
+                                      SEQ 1:83
+                                      ACK 559
+
+ACK 83 ─────────────────────────────►
+```
+
+### השורות המקוריות
+
+```text id="v70s3t"
+IN   Flags [P.]  seq 136:559  ack 1    win 2024  length 423
+OUT  Flags [.]                ack 559  win 501   length 0
+OUT  Flags [P.]  seq 1:83     ack 559  win 501   length 82
+IN   Flags [.]                ack 83   win 2024  length 0
+```
+
+---
+
+## 📤 הודעה יוצאת — Baileys → WhatsApp
+
+מה־trace שלך סביב `15:27:36–37`:
+
+| # | כיוון                      | Flags  | SEQ       |     ACK |    WIN |  Length | משמעות                     |
+| - | -------------------------- | ------ | --------- | ------: | -----: | ------: | -------------------------- |
+| 1 | **OUT** Baileys → WhatsApp | `[P.]` | `83:227`  |   `488` |  `501` | **144** | Baileys מתחיל לשלוח        |
+| 2 | **IN** WhatsApp → Baileys  | `[.]`  | —         | **227** | `2025` |   **0** | WhatsApp מאשר את 144 bytes |
+| 3 | **IN** WhatsApp → Baileys  | `[P.]` | `488:778` |   `227` | `2025` | **290** | WhatsApp מחזיר payload     |
+| 4 | **OUT** Baileys → WhatsApp | `[P.]` | `227:580` |   `778` |  `501` | **353** | Baileys שולח payload + ACK |
+| 5 | **IN** WhatsApp → Baileys  | `[.]`  | —         | **580** | `2024` |   **0** | WhatsApp מאשר              |
+| 6 | **IN** WhatsApp → Baileys  | `[P.]` | `778:867` |   `580` | `2024` |  **89** | עוד payload מ־WhatsApp     |
+| 7 | **OUT** Baileys → WhatsApp | `[.]`  | —         | **867** |  `501` |   **0** | Baileys מאשר               |
+
+ובהמשך יש עוד IN/OUT כחלק מאותו דו־שיח.
+
+### השורות המקוריות
+
+```text id="swk1ko"
+OUT  Flags [P.]  seq 83:227   ack 488  win 501   length 144
+IN   Flags [.]                ack 227  win 2025  length 0
+
+IN   Flags [P.]  seq 488:778  ack 227  win 2025  length 290
+OUT  Flags [P.]  seq 227:580  ack 778  win 501   length 353
+IN   Flags [.]                ack 580  win 2024  length 0
+
+IN   Flags [P.]  seq 778:867  ack 580  win 2024  length 89
+OUT  Flags [.]                ack 867  win 501   length 0
+```
+
+## 🔎 ההבדל שקל לזהות
+
+|                           | 📥 Incoming             | 📤 Outgoing              |
+| ------------------------- | ----------------------- | ------------------------ |
+| מי מתחיל את האירוע        | **WhatsApp**            | **Baileys**              |
+| ה־payload המשמעותי הראשון | `IN 423`                | `OUT 144`                |
+| TCP ACK ראשון             | Baileys מחזיר `ACK 559` | WhatsApp מחזיר `ACK 227` |
+| כיוון ראשוני              | `IN`                    | `OUT`                    |
+| TCP תקין                  | ACK מתקדם               | ACK מתקדם                |
+| Window                    | `2024 / 501`            | `2025 / 501`             |
+
+והכי חשוב לחקירת התקיעה שלך: **אל תתקבע על `423` או `144`** — אלה גדלים מהדוגמאות הספציפיות. הסימן החשוב הוא הכיוון והדפוס.
+
+ב־incoming תקין אנחנו רואים בבירור **WhatsApp יוזם `IN` עם payload**, בעוד ב־outgoing **Baileys יוזם `OUT` עם payload**.
+
