@@ -400,3 +400,13 @@ OUT  Flags [.]                ack 867  win 501   length 0
 
 ב־incoming תקין אנחנו רואים בבירור **WhatsApp יוזם `IN` עם payload**, בעוד ב־outgoing **Baileys יוזם `OUT` עם payload**.
 
+
+
+| Flags  | משמעות             | בדרך כלל Length |
+| ------ | ------------------ | --------------: |
+| `[.]`  | ACK בלבד           |             `0` |
+| `[P.]` | **Payload + ACK**  |           `> 0` |
+| `[S]`  | פתיחת TCP — SYN    |             `0` |
+| `[S.]` | SYN + ACK          |             `0` |
+| `[F.]` | סגירה מסודרת + ACK |             `0` |
+| `[R.]` | Reset + ACK        |             `0` |
