@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - baileys-7
   workflow_dispatch:
 
 jobs:
@@ -29,7 +30,8 @@ jobs:
         with:
           images: liorgr/whatsapp-single
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=v7-test,enable=${{ github.ref == 'refs/heads/baileys-7' }}
             type=sha
 
       - name: Build and push
