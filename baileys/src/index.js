@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.34';
+const APP_VERSION = '1.0.0.36';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -160,6 +160,7 @@ let status = 'disconnected';
 let connectGen   = 0;      // מזהה הדור הנוכחי; רק הדור האחרון פעיל
 let reconnecting = false;  // מונע שרשראות reconnect מקבילות
 let connecting   = false;  // connectWA בריצה כרגע — מונע כניסה מקבילה
+let heartbeatTimer = null;
 
 // ── dedup חוצה-batch: נדרש כי הפעלנו type==='append' ────────────────────────
 const deliveredIds = new Set();
@@ -412,10 +413,20 @@ currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }
       status = 'connected';
       logger.info('WhatsApp connected');
       try { await sendToWebhooks(buildAuthPayload(currentSock)); } catch (e) { logger.error({ err: e }, 'Failed to send creds'); }
+
+      currentSock.sendPresenceUpdate('available').catch(() => {});
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (myGen !== connectGen) return;
+        currentSock.sendPresenceUpdate('available')
+          .then(() => logger.warn('[HEARTBEAT] presence ok'))
+          .catch(e => logger.warn({ err: e.message }, '[HEARTBEAT] presence failed'));
+      }, 60000);
     }
 
     if (connection === 'close') {
       status = 'disconnected';
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
       const code  = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const retry = code !== DisconnectReason.loggedOut;
       logger.warn({ code, retry, myGen }, 'Connection closed');
