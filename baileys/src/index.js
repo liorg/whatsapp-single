@@ -15,12 +15,13 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '1.0.0.36';
+const APP_VERSION = '2.0.0.0';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
 let pairingRequested = false;  // מונע בקשות כפולות
 const PHONE_NUMBER = process.env.PHONE_NUMBER || null;
+const IGNORE_GROUPS = process.env.IGNORE_GROUPS !== 'false';
 
 const NOISE = ['SessionEntry','indexInfo','currentRatchet','_chains',
   'Closing open session','Closing session','baseKey','rootKey',
@@ -174,6 +175,15 @@ function rememberDelivered(id) {
   }
 }
 
+const recentMessages = new Map();
+function rememberMessage(id, content) {
+  if (!id || !content) return;
+  recentMessages.set(id, content);
+  if (recentMessages.size > 1000) {
+    recentMessages.delete(recentMessages.keys().next().value);
+  }
+}
+
 function unwrapMessage(message) {
   if (!message) return null;
   if (message.ephemeralMessage?.message)  return unwrapMessage(message.ephemeralMessage.message);
@@ -187,6 +197,7 @@ async function notifyOutgoing(messageId, jid, type, data) {
     event:     'message',
     messageId,
     jid,
+    sendTo:    jid,
     type,
     data:      { ...data, fromMe: true, pushName: null },
     timestamp: Math.floor(Date.now() / 1000),   // ✅ Unix seconds כמו Baileys
@@ -195,10 +206,16 @@ async function notifyOutgoing(messageId, jid, type, data) {
 }
 
 function parseMsg(msg) {
-  const jid     = msg.key.remoteJid;
-  const isGroup = jid?.endsWith('@g.us');
-  const sender  = isGroup ? msg.key.participant : jid;
-  const c       = unwrapMessage(msg.message);
+  const rawJid  = msg.key.remoteJid;
+  const isGroup = rawJid?.endsWith('@g.us');
+
+  // v7: remoteJid חוזר כ-@lid בשיחות פרטיות. remoteJidAlt מחזיק את ה-PN.
+  const pnAlt = msg.key.remoteJidAlt || msg.key.senderPn || msg.key.participantPn || null;
+  const jid   = (rawJid?.includes('@lid') && pnAlt) ? pnAlt : rawJid;
+
+  const lid    = isGroup ? msg.key.participant : rawJid;   // המזהה הגולמי
+  const sender = jid;                                       // ← PN, כמו jid
+  const c      = unwrapMessage(msg.message);
 
   let type = 'unknown';
   let data = {};
@@ -319,7 +336,8 @@ else if (c?.videoMessage) {
     data = { rawType: keys[0] || null, keys };
   }
 
-  return { messageId: msg.key.id, jid, sender, isGroup, timestamp: msg.messageTimestamp, type, data, receivedAt: new Date().toISOString() };
+  //return { messageId: msg.key.id, jid, sender, isGroup, timestamp: msg.messageTimestamp, type, data, receivedAt: new Date().toISOString() };
+  return { messageId: msg.key.id, jid, sender, sendTo: jid, lid, isGroup, timestamp: msg.messageTimestamp, type, data, receivedAt: new Date().toISOString() };
 }
 
 async function connectWA() {
@@ -351,9 +369,9 @@ async function connectWA() {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     browser: USE_PAIRING_CODE
-      ? Browsers.macOS('Chrome')                       // pairing code דורש פורמט תקין
-      : [user_display, 'Chrome', APP_VERSION],         // QR — נשאר עם הזיהוי המותאם
-    printQRInTerminal: false,
+      ? Browsers.macOS('Chrome')
+      : [user_display, 'Chrome', APP_VERSION],
+    getMessage: async (key) => recentMessages.get(key?.id) || undefined,
   });
 
   // הגלובלי משמש רק את ה-endpoints (/send/*) — ה-handlers עובדים עם currentSock
@@ -501,7 +519,6 @@ currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }
       logger.warn({ type }, '[UPSERT] dropped — unhandled type');
       return;
     }
-
     const seen = new Set();
     for (const msg of messages) {
       if (!msg.message) { logger.warn({ id: msg.key?.id }, '[UPSERT] skip — no message body'); continue; }
@@ -509,6 +526,10 @@ currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }
       if (seen.has(msgId)) continue;
       seen.add(msgId);
       if (deliveredIds.has(msgId)) { logger.warn({ id: msgId }, '[UPSERT] skip — already delivered'); continue; }
+      // cache להודעות אחרונות — v7 דורש getMessage ל-retries ולהודעות מצוטטות
+    // cache להודעות אחרונות — v7 דורש getMessage ל-retries ולהודעות מצוטטות
+    
+
       if (msg.message?.senderKeyDistributionMessage && !msg.message?.conversation && !msg.message?.extendedTextMessage) {
         logger.warn({ id: msgId }, '[UPSERT] skip — senderKeyDistribution');
         continue;
@@ -517,12 +538,16 @@ currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }
         logger.warn({ id: msgId }, '[UPSERT] skip — protocolMessage');
         continue;
       }
-
+      if (IGNORE_GROUPS && msg.key.remoteJid?.endsWith('@g.us')) {
+        logger.warn({ id: msgId }, '[UPSERT] skip — group');
+        continue;
+      }
+      rememberMessage(msgId, msg.message);
       if (!msg.key.fromMe) {
-        const sender = msg.key.participant || msg.key.remoteJid;
-        const senderPhone = msg.key.participantPn || msg.key.senderPn || sender;
-        if (sender && !sender.includes('@g.us')) {
-          await saveContact(senderPhone || sender, { name: msg.pushName, notify: msg.pushName, isMyContact: true });
+        const pn = (msg.key.remoteJid?.includes('@lid') &&
+                    (msg.key.remoteJidAlt || msg.key.senderPn)) || msg.key.remoteJid;
+        if (pn && !pn.includes('@g.us')) {
+          await saveContact(pn, { name: msg.pushName, notify: msg.pushName, isMyContact: true });
         }
       }
 
@@ -551,9 +576,10 @@ currentSock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }
           event:     'message',
           messageId: parsed.messageId,
           jid:       parsed.jid,
+          sendTo:    parsed.sendTo,
           type:      parsed.type,
-          data:      { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.sender },
-          timestamp: parsed.timestamp,   // Unix epoch number — נשמר כבר ב-parsed
+          data:      { ...parsed.data, fromMe: parsed.fromMe, pushName: parsed.pushName, lid: parsed.lid },
+          timestamp: parsed.timestamp,
           phoneId:   PHONE_ID,
         });
         rememberDelivered(parsed.messageId);

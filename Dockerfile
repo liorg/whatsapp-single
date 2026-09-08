@@ -25,8 +25,8 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # ── Node / Baileys ────────────────────────────────────────────────────────────
 WORKDIR /app/baileys
-COPY baileys/package.json ./
-RUN npm install --omit=dev
+COPY baileys/package.json baileys/package-lock.json ./
+RUN npm ci --omit=dev
 COPY baileys/src/ ./src/
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
