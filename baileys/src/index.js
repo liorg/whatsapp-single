@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '2.0.0.0';
+const APP_VERSION = '2.0.0.2';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -371,6 +371,7 @@ async function connectWA() {
     browser: USE_PAIRING_CODE
       ? Browsers.macOS('Chrome')
       : [user_display, 'Chrome', APP_VERSION],
+    defaultQueryTimeoutMs: USE_PAIRING_CODE ? undefined : 60000,
     getMessage: async (key) => recentMessages.get(key?.id) || undefined,
   });
 
