@@ -1,12 +1,9 @@
 import base64
 import io
-import json
-import secrets
 import sys
 import os
-import time
 from contextlib import asynccontextmanager
-from typing import Optional, List, Literal
+from typing import Optional, List
 
 import httpx
 import qrcode
@@ -95,19 +92,6 @@ class StickerMsg(BaseModel):
     jid: str
     sticker: str        # URL, local path, or base64 string
 
-class TemplateComponent(BaseModel):
-    type: Literal["HEADER", "BODY", "FOOTER", "BUTTONS"]
-    format: Optional[str] = None
-    text: Optional[str] = None
-    example: Optional[dict] = None
-    buttons: Optional[list] = None
-
-class TemplateCreate(BaseModel):
-    name: str = Field(..., pattern=r"^[a-z0-9_]{1,512}$")
-    language: str
-    category: Literal["MARKETING", "UTILITY", "AUTHENTICATION"]
-    components: List[TemplateComponent]
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 async def baileys_post(path: str, data: dict) -> dict:
     async with httpx.AsyncClient(timeout=30) as c:
@@ -144,7 +128,6 @@ app = FastAPI(
 - **Webhooks**: רשום endpoint לקבלת הודעות נכנסות (מנוהל ע"י Baileys)
 - **Messages**: קרא הודעות מה-stream
 - **Contacts**: רשימת אנשי קשר
-- **Templates**: createTemplate, FindStatusTemplate
 """,
     lifespan=lifespan
 )
@@ -280,6 +263,7 @@ async def list_webhooks():
 # ── Auth ──────────────────────────────────────────────────────────────────────
 @app.get("/auth/status", tags=["Auth"])
 async def auth_status(request: Request):
+    import json
     redis = request.app.state.redis
     raw   = await redis.get("wa:last_auth")
     if not raw:
@@ -301,6 +285,7 @@ async def get_creds(request: Request, phone: str):
 
 @app.get("/auth/dashboard", tags=["Auth"])
 async def auth_dashboard(request: Request):
+    import json
     from fastapi.responses import HTMLResponse
 
     redis        = request.app.state.redis
@@ -403,26 +388,6 @@ async def get_contacts(q: str = Query(""), limit: int = Query(200, ge=1, le=1000
 async def contacts_count():
     return await baileys_get("/debug/contacts-count")
 
-# ── Templates ─────────────────────────────────────────────────────────────────
-@app.post("/templates", tags=["Templates"], operation_id="createTemplate")
-async def create_template(b: TemplateCreate):
-    tid = f"{int(time.time() * 1000)}{secrets.randbelow(1000):03d}"
-    rec = {**b.model_dump(exclude_none=True), "id": tid, "status": "PENDING"}
-    await redis_client.set(f"wa:templates:{PHONE_ID}:{tid}", json.dumps(rec, ensure_ascii=False))
-    return {"id": tid, "status": "PENDING", "category": b.category}
-
-@app.get("/templates/{template_id}", tags=["Templates"], operation_id="FindStatusTemplate")
-async def find_status_template(template_id: str):
-    key = f"wa:templates:{PHONE_ID}:{template_id}"
-    raw = await redis_client.get(key)
-    if not raw:
-        raise HTTPException(404, "Template not found")
-    rec = json.loads(raw)
-    if rec["status"] == "PENDING":
-        rec["status"] = "APPROVED"
-        await redis_client.set(key, json.dumps(rec, ensure_ascii=False))
-    return {"id": rec["id"], "status": rec["status"]}
-
 # ── System ────────────────────────────────────────────────────────────────────
 @app.get("/version", tags=["System"])
 async def version():
@@ -488,3 +453,4 @@ async def pairing_code_refresh():
             )
     except Exception as e:
         return JSONResponse(status_code=503, content={"error": str(e)})
+        

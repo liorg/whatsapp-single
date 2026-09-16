@@ -15,11 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '2.0.0.3';
-const BAILEYS_VERSION = (() => {
-  try { return JSON.parse(fs.readFileSync('/app/node_modules/@whiskeysockets/baileys/package.json', 'utf8')).version; }
-  catch { return 'unknown'; }
-})();
+const APP_VERSION = '2.0.0.2';
 let pairingCodeData = null;        // ←20 
 const  user_display= process.env.USER_DISPLAY || '****anon';
 const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true';
@@ -134,7 +130,7 @@ async function getContacts(query = '', limit = 200) {
 }
 
 async function sendToWebhooks(payload) {
-  return redisStreams.sendToWebhooks({ ...payload, ver: `baileys@${BAILEYS_VERSION}` });
+  return redisStreams.sendToWebhooks(payload);
 }
 
 
