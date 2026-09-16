@@ -15,9 +15,9 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '2.0.0.3';
+const APP_VERSION = '2.0.0.4';
 const BAILEYS_VERSION = (() => {
-  try { return JSON.parse(fs.readFileSync('/app/node_modules/@whiskeysockets/baileys/package.json', 'utf8')).version; }
+  try { return JSON.parse(fs.readFileSync('/app/baileys/node_modules/@whiskeysockets/baileys/package.json', 'utf8')).version; }
   catch { return 'unknown'; }
 })();
 let pairingCodeData = null;        // ←20 
