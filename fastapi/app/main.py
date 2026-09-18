@@ -470,6 +470,13 @@ async def get_media(message_id: str):
         except Exception as e:
             raise HTTPException(503, f"Manager unavailable: {e}")
             
+@app.delete("/templates/{template_id}", tags=["Templates"], operation_id="deleteTemplate")
+async def delete_template(template_id: str):
+    """Baileys אינו תומך בתבניות — מדמה מחיקה מוצלחת. idempotent."""
+    key     = f"wa:templates:{PHONE_ID}:{template_id}"
+    existed = await redis_client.delete(key)
+    return {"success": True, "id": template_id, "already_deleted": existed == 0}
+    
 @app.post("/pairing-code/refresh", tags=["Connection"])
 async def pairing_code_refresh():
     """מעביר בקשת refresh ל-Baileys ומחזיר קוד חדש"""
