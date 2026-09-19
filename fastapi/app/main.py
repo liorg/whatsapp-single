@@ -495,3 +495,86 @@ async def pairing_code_refresh():
             )
     except Exception as e:
         return JSONResponse(status_code=503, content={"error": str(e)})
+# ── Templates ─────────────────────────────────────────────────────────────────
+# קטלוג ברירת מחדל — זהה לתבניות שמגיעות עם WABA חדש.
+SEED_TEMPLATES: list[dict] = [
+    {
+        "id": "100000000000001", "name": "hello_world", "language": "en_US",
+        "category": "UTILITY", "status": "APPROVED",
+        "components": [
+            {"type": "HEADER", "format": "TEXT", "text": "Hello World"},
+            {"type": "BODY", "text": "Welcome and congratulations!! This message demonstrates your ability to send a WhatsApp message notification from the Cloud API, hosted by Meta. Thank you for taking the time to test with us."},
+            {"type": "FOOTER", "text": "WhatsApp Business Platform sample message"},
+        ],
+    },
+    {
+        "id": "100000000000002", "name": "sample_issue_resolution", "language": "en_US",
+        "category": "UTILITY", "status": "APPROVED",
+        "components": [
+            {"type": "BODY", "text": "Hi {{1}}, were we able to solve the issue that you were facing?",
+             "example": {"body_text": [["Pablo"]]}},
+            {"type": "BUTTONS", "buttons": [
+                {"type": "QUICK_REPLY", "text": "Yes"},
+                {"type": "QUICK_REPLY", "text": "No"},
+            ]},
+        ],
+    },
+    {
+        "id": "100000000000003", "name": "sample_shipping_confirmation", "language": "en_US",
+        "category": "UTILITY", "status": "APPROVED",
+        "components": [
+            {"type": "BODY", "text": "Your package has been shipped. It will be delivered in {{1}} business days.",
+             "example": {"body_text": [["3"]]}},
+            {"type": "FOOTER", "text": "This message is from an unverified business."},
+        ],
+    },
+    {
+        "id": "100000000000004", "name": "sample_movie_ticket_confirmation", "language": "en_US",
+        "category": "UTILITY", "status": "APPROVED",
+        "components": [
+            {"type": "HEADER", "format": "TEXT", "text": "Ticket for {{1}}",
+             "example": {"header_text": ["Dune"]}},
+            {"type": "BODY", "text": "Your ticket is confirmed for {{1}} at {{2}}. Enjoy the show!",
+             "example": {"body_text": [["Dune", "20:30"]]}},
+        ],
+    },
+    {
+        "id": "100000000000005", "name": "sample_purchase_feedback", "language": "en_US",
+        "category": "MARKETING", "status": "REJECTED",
+        "rejected_reason": "INCORRECT_CATEGORY",
+        "components": [
+            {"type": "BODY", "text": "Thank you for purchasing {{1}}. How would you rate it?",
+             "example": {"body_text": [["a coffee machine"]]}},
+        ],
+    },
+]
+
+
+@app.get("/templates", tags=["Templates"], operation_id="getTemplates")
+async def get_templates(
+    status: str = Query("APPROVED", description="Filter by status: APPROVED, PENDING, REJECTED, PAUSED or ALL."),
+    limit: int = Query(100, ge=1, le=500, description="Maximum rows to return."),
+):
+    """קטלוג התבניות של הטלפון — seed קבוע + תבניות שנוצרו דרך createTemplate."""
+    items = list(SEED_TEMPLATES)
+
+    keys = await redis_client.keys(f"wa:templates:{PHONE_ID}:*")
+    for key in keys:
+        raw = await redis_client.get(key)
+        if not raw:
+            continue
+        rec = json.loads(raw)
+        items.append({
+            "id":         rec.get("id"),
+            "name":       rec.get("name"),
+            "language":   rec.get("language"),
+            "category":   rec.get("category"),
+            "status":     rec.get("status") or "PENDING",
+            "components": rec.get("components") or [],
+        })
+
+    want = (status or "ALL").upper()
+    if want != "ALL":
+        items = [t for t in items if (t.get("status") or "").upper() == want]
+
+    return {"data": items[:limit], "count": len(items[:limit])}
