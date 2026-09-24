@@ -33,9 +33,12 @@ COPY baileys/src/ ./src/
 WORKDIR /app/fastapi
 COPY fastapi/app/ ./app/
 
-# ── Supervisor ────────────────────────────────────────────────────────────────
-RUN pip install supervisor
-COPY supervisord.conf /etc/supervisord.conf
+# ── קומפילציה מראש ל-.pyc — חוסך קומפילציה בכל עליית container ─────────────
+RUN python -m compileall -q /app/fastapi /opt/venv/lib
+
+# ── Entrypoint: במקום supervisord (חוסך ~1s בעלייה) ──────────────────────────
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # ── Auth + Media dirs ─────────────────────────────────────────────────────────
 RUN mkdir -p /app/auth_info /app/data/media
@@ -54,4 +57,4 @@ EXPOSE 8000 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["supervisord", "-c", "/etc/supervisord.conf", "-n"]
+CMD ["/app/start.sh"]
