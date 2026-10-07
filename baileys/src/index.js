@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import RedisStreams from './redis-streams.js';
 import path from 'path';         // ← 
 const PHONE_ID     = process.env.PHONE_ID || null;  // ← הוסף
-const APP_VERSION = '2.0.0.8';
+const APP_VERSION = '2.0.0.9';
 const BAILEYS_VERSION = (() => {
   try { return JSON.parse(fs.readFileSync('/app/baileys/node_modules/@whiskeysockets/baileys/package.json', 'utf8')).version; }
   catch { return 'unknown'; }
@@ -211,8 +211,10 @@ async function notifyOutgoing(messageId, jid, type, data) {
 }
 
 function parseMsg(msg) {
+  logger.info({ messageId: msg?.key?.id ?? null, message: msg?.message ?? null }, '[MESSAGE] raw decoded');
   const rawJid  = msg.key.remoteJid;
   const isGroup = rawJid?.endsWith('@g.us');
+
 
   // v7: remoteJid חוזר כ-@lid בשיחות פרטיות. remoteJidAlt מחזיק את ה-PN.
   const pnAlt = msg.key.remoteJidAlt || msg.key.senderPn || msg.key.participantPn || null;
