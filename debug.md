@@ -34,7 +34,7 @@ sudo systemctl restart whatsapp-manager.service
 ```bash
 docker inspect --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}' whatsapp_972504476645_3beff8fa
 ```
-
+לראות הודעות בזמן אמת ברמת RAW
 ```bash
 docker exec whatsapp_972504476645_3beff8fa tail -n 0 -F /var/log/baileys.log \
   | awk '/\[MESSAGE\] raw decoded/ {show=1} show {print; fflush()} show && /^    }[[:space:]]*$/ {show=0}'
